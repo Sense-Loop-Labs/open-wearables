@@ -1,21 +1,18 @@
-"""Service for processing Oura Ring webhook notifications and managing subscriptions."""
+"""Oura webhook subscription management.
 
-from datetime import datetime, timedelta
+Handles app-level subscription registration with the Oura API:
+create, list, and renew subscriptions. These are admin-only operations
+called once during setup, not part of the inbound webhook pipeline.
+
+Inbound webhook processing is handled by OuraWebhookHandler.
+"""
+
 from logging import getLogger
-from typing import Any, cast
-from uuid import UUID
+from typing import Any
 
 import httpx
 
 from app.config import settings
-from app.database import DbSession
-from app.repositories import UserConnectionRepository
-from app.schemas.providers.oura import OuraWebhookNotification
-from app.services.providers.base_strategy import BaseProviderStrategy
-from app.services.providers.factory import ProviderFactory
-from app.services.providers.oura.data_247 import Oura247Data
-from app.services.providers.oura.workouts import OuraWorkouts
-from app.utils.dates import parse_webhook_data_timestamp
 from app.utils.structured_logging import log_structured
 
 logger = getLogger(__name__)
@@ -32,10 +29,7 @@ OURA_WEBHOOK_DATA_TYPES = [
 
 
 class OuraWebhookService:
-    """Handles Oura webhook notification processing and subscription management."""
-
-    def __init__(self) -> None:
-        self.connection_repo = UserConnectionRepository()
+    """App-level Oura webhook subscription management."""
 
     def _get_oura_credentials(self) -> tuple[str, str]:
         """Get Oura client credentials. Raises ValueError if not configured."""
@@ -52,154 +46,6 @@ class OuraWebhookService:
             "x-client-id": client_id,
             "x-client-secret": client_secret,
         }
-
-    @staticmethod
-    def _parse_data_timestamp(
-        notification: OuraWebhookNotification,
-    ) -> tuple[datetime, datetime]:
-        """Parse notification timestamp into a start/end date range."""
-        data_date = parse_webhook_data_timestamp(notification.data_timestamp)
-
-        start_time = data_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_time = start_time + timedelta(days=1)
-        return start_time, end_time
-
-    def process_notification(
-        self,
-        db: DbSession,
-        notification: OuraWebhookNotification,
-    ) -> dict:
-        """Process a single Oura webhook notification.
-
-        Looks up the internal user, fetches the relevant data from Oura API,
-        and saves it to the database.
-
-        Returns:
-            Dict with processing result (status, data_type, records_saved, etc.)
-        """
-        # Look up internal user by Oura user_id
-        connection = self.connection_repo.get_by_provider_user_id(db, "oura", notification.user_id)
-        if not connection:
-            log_structured(
-                logger,
-                "warning",
-                "No connection found for Oura user",
-                action="oura_webhook_user_not_found",
-                oura_user_id=notification.user_id,
-                data_type=notification.data_type,
-            )
-            return {"status": "ignored", "reason": "user_not_connected"}
-
-        internal_user_id: UUID = connection.user_id
-
-        log_structured(
-            logger,
-            "info",
-            "Processing Oura webhook notification",
-            action="oura_webhook_processing",
-            user_id=str(internal_user_id),
-            oura_user_id=notification.user_id,
-            data_type=notification.data_type,
-            event_type=notification.event_type,
-        )
-
-        # Skip delete events
-        if notification.event_type == "delete":
-            log_structured(
-                logger,
-                "info",
-                "Ignoring delete event",
-                action="oura_webhook_delete_skipped",
-                data_type=notification.data_type,
-                user_id=str(internal_user_id),
-            )
-            return {"status": "ignored", "reason": "delete_event"}
-
-        start_time, end_time = self._parse_data_timestamp(notification)
-
-        # Get Oura provider
-        factory = ProviderFactory()
-        oura_strategy = factory.get_provider("oura")
-
-        count = self._dispatch_data_type(db, notification, oura_strategy, internal_user_id, start_time, end_time)
-
-        if count is None:
-            log_structured(
-                logger,
-                "info",
-                "Unhandled Oura data type",
-                action="oura_webhook_unhandled",
-                data_type=notification.data_type,
-                user_id=str(internal_user_id),
-            )
-            return {
-                "status": "ignored",
-                "reason": f"unhandled_data_type: {notification.data_type}",
-            }
-
-        log_structured(
-            logger,
-            "info",
-            "Oura webhook notification processed",
-            action="oura_webhook_complete",
-            user_id=str(internal_user_id),
-            data_type=notification.data_type,
-            event_type=notification.event_type,
-            records_saved=count,
-        )
-
-        return {
-            "status": "processed",
-            "data_type": notification.data_type,
-            "event_type": notification.event_type,
-            "records_saved": count,
-        }
-
-    @staticmethod
-    def _dispatch_data_type(
-        db: DbSession,
-        notification: OuraWebhookNotification,
-        oura_strategy: BaseProviderStrategy,
-        user_id: UUID,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> int | None:
-        """Dispatch webhook to the appropriate data handler.
-
-        Returns the number of records saved, or None if data_type is unhandled.
-        """
-        if notification.data_type in ("sleep", "daily_sleep") and oura_strategy.data_247:
-            oura_247 = cast(Oura247Data, oura_strategy.data_247)
-            return oura_247.save_sleep_data(
-                db,
-                user_id,
-                oura_247.normalize_sleeps(oura_247.get_sleep_data(db, user_id, start_time, end_time), user_id),
-            )
-
-        if notification.data_type == "daily_readiness" and oura_strategy.data_247:
-            oura_247 = cast(Oura247Data, oura_strategy.data_247)
-            return oura_247.save_readiness_data(
-                db,
-                user_id,
-                oura_247.normalize_readiness(oura_247.get_readiness_data(db, user_id, start_time, end_time), user_id),
-            )
-
-        if notification.data_type == "daily_activity" and oura_strategy.data_247:
-            oura_247 = cast(Oura247Data, oura_strategy.data_247)
-            raw = oura_247.get_activity_samples(db, user_id, start_time, end_time)
-            normalized = oura_247.normalize_activity_samples(raw, user_id)
-            return oura_247.save_activity_data(db, user_id, normalized)
-
-        if notification.data_type == "daily_spo2" and oura_strategy.data_247:
-            oura_247 = cast(Oura247Data, oura_strategy.data_247)
-            raw = oura_247.get_spo2_data(db, user_id, start_time, end_time)
-            return oura_247.save_spo2_data(db, user_id, raw)
-
-        if notification.data_type == "workout" and oura_strategy.workouts:
-            oura_workouts = cast(OuraWorkouts, oura_strategy.workouts)
-            return oura_workouts.load_data(db, user_id, start_date=start_time, end_date=end_time)
-
-        return None
 
     async def create_subscriptions(
         self,
@@ -289,7 +135,6 @@ class OuraWebhookService:
         headers = self._get_client_headers()
 
         async with httpx.AsyncClient() as client:
-            # List active subscriptions
             list_response = await client.get(
                 OURA_WEBHOOK_API_URL,
                 headers=headers,

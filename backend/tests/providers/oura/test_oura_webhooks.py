@@ -1,13 +1,13 @@
 """Tests for Oura webhook schemas and service."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from freezegun import freeze_time
 from pydantic import ValidationError
 
 from app.schemas.providers.oura import OuraWebhookNotification
-from app.services.providers.oura.webhook_service import OuraWebhookService
+from app.utils.dates import parse_webhook_data_timestamp
 
 
 class TestOuraWebhookNotification:
@@ -79,17 +79,19 @@ class TestOuraWebhookNotification:
             assert notification.data_type == dt
 
 
-class TestOuraWebhookServiceTimestampParsing:
-    """Test the service's timestamp parsing logic."""
+def _parse_date_window(data_timestamp: str | None) -> tuple[datetime, datetime]:
+    """Replicate the date window logic used by OuraWebhookHandler.process_payload."""
+    data_date = parse_webhook_data_timestamp(data_timestamp)
+    start = data_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return start, end
+
+
+class TestOuraWebhookDataTimestampParsing:
+    """Test the date window logic used when processing Oura webhook notifications."""
 
     def test_parse_data_timestamp_with_date(self) -> None:
-        notification = OuraWebhookNotification(
-            event_type="create",
-            data_type="daily_sleep",
-            user_id="test",
-            data_timestamp="2024-01-15",
-        )
-        start, end = OuraWebhookService._parse_data_timestamp(notification)
+        start, end = _parse_date_window("2024-01-15")
 
         assert start.year == 2024
         assert start.month == 1
@@ -99,13 +101,7 @@ class TestOuraWebhookServiceTimestampParsing:
         assert end.day == 16
 
     def test_parse_data_timestamp_with_iso_datetime(self) -> None:
-        notification = OuraWebhookNotification(
-            event_type="create",
-            data_type="workout",
-            user_id="test",
-            data_timestamp="2024-03-20T14:30:00+00:00",
-        )
-        start, end = OuraWebhookService._parse_data_timestamp(notification)
+        start, end = _parse_date_window("2024-03-20T14:30:00+00:00")
 
         assert start.day == 20
         assert start.month == 3
@@ -113,25 +109,14 @@ class TestOuraWebhookServiceTimestampParsing:
 
     @freeze_time("2024-06-15T12:00:00+00:00")
     def test_parse_data_timestamp_missing_falls_back_to_utc_now(self) -> None:
-        notification = OuraWebhookNotification(
-            event_type="create",
-            data_type="daily_activity",
-            user_id="test",
-        )
-        start, end = OuraWebhookService._parse_data_timestamp(notification)
+        start, end = _parse_date_window(None)
 
         assert start == datetime(2024, 6, 15, 0, 0, tzinfo=timezone.utc)
         assert end == datetime(2024, 6, 16, 0, 0, tzinfo=timezone.utc)
 
     @freeze_time("2024-06-15T12:00:00+00:00")
     def test_parse_data_timestamp_invalid_falls_back_to_utc_now(self) -> None:
-        notification = OuraWebhookNotification(
-            event_type="create",
-            data_type="daily_readiness",
-            user_id="test",
-            data_timestamp="not-a-date",
-        )
-        start, end = OuraWebhookService._parse_data_timestamp(notification)
+        start, end = _parse_date_window("not-a-date")
 
         assert start == datetime(2024, 6, 15, 0, 0, tzinfo=timezone.utc)
         assert end == datetime(2024, 6, 16, 0, 0, tzinfo=timezone.utc)

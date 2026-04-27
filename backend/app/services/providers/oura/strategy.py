@@ -1,6 +1,7 @@
 from app.services.providers.base_strategy import BaseProviderStrategy, ProviderCapabilities
 from app.services.providers.oura.data_247 import Oura247Data
 from app.services.providers.oura.oauth import OuraOAuth
+from app.services.providers.oura.webhook_handler import OuraWebhookHandler
 from app.services.providers.oura.workouts import OuraWorkouts
 
 
@@ -34,6 +35,11 @@ class OuraStrategy(BaseProviderStrategy):
             oauth=self.oauth,
         )
 
+        self.webhooks = OuraWebhookHandler(
+            data_247=self.data_247,
+            workouts=self.workouts,
+        )
+
     @property
     def name(self) -> str:
         """Unique identifier for the provider (lowercase)."""
@@ -46,8 +52,4 @@ class OuraStrategy(BaseProviderStrategy):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        # Oura REST API supports historical and recent data polling.
-        # Oura webhooks send a lightweight notification (event_type + user_id)
-        # when new data is ready; actual data must still be fetched via REST.
-        return ProviderCapabilities(rest_pull=True)  # use the line below after implementing webhooks
-        # return ProviderCapabilities(rest_pull=True, webhook_ping=True)
+        return ProviderCapabilities(rest_pull=True, webhook_ping=True)
