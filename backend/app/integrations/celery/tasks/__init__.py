@@ -35,6 +35,13 @@ from .garmin.backfill_trigger import (
     trigger_backfill_for_type as trigger_garmin_backfill_for_type,
 )
 from .garmin.gc_task import gc_stuck_backfills
+from .medplum_tasks import (
+    aggregate_hr_hourly,
+    process_hr_for_medplum,
+    send_sleep_to_medplum,
+    send_vitals_to_medplum,
+    send_workout_to_medplum,
+)
 from .periodic_sync_task import sync_all_users
 from .process_aws_upload_task import process_aws_upload
 from .process_sdk_upload_task import process_sdk_upload
@@ -75,4 +82,10 @@ __all__ = [
     "process_webhook_push",
     # Outgoing webhooks
     "emit_webhook_event",
+    # Medplum FHIR integration (Sense Loop Addition)
+    "process_hr_for_medplum",
+    "aggregate_hr_hourly",
+    "send_vitals_to_medplum",
+    "send_workout_to_medplum",
+    "send_sleep_to_medplum",
 ]

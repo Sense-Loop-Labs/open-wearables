@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: open-wearables
       POSTGRES_PASSWORD: open-wearables
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Use 5433 to avoid conflict with sense-loop-fhir postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U open-wearables -d open-wearables"]
       interval: 5s
@@ -131,7 +131,7 @@ services:
     container_name: redis__open-wearables
     image: redis:8
     ports:
-      - "6379:6379"
+      - "6380:6379"  # Use 6380 to avoid conflict with sense-loop-fhir redis
     volumes:
       - redis_data:/var/lib/redis/data
 
@@ -201,3 +201,9 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+# Sense Loop Addition: External network for inter-service communication with Medplum
+networks:
+  default:
+    name: sense-loop
+    external: true

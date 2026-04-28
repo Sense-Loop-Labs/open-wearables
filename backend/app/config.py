@@ -187,6 +187,26 @@ class Settings(BaseSettings):
     # Bearer token for the Svix API.  If unset, auto-generated from svix_jwt_secret at startup.
     svix_auth_token: SecretStr | None = None
 
+    # MEDPLUM FHIR INTEGRATION SETTINGS (Sense Loop Addition)
+    # Webhook URL to send data to Medplum FHIR Conversion Bot
+    medplum_webhook_url: str | None = None
+    # Shared secret for webhook authentication
+    medplum_webhook_secret: SecretStr | None = None
+    # OAuth2 client credentials for Medplum API
+    medplum_client_id: str | None = None
+    medplum_client_secret: SecretStr | None = None
+    # Enable/disable Medplum integration
+    medplum_enabled: bool = False
+    # HR processing settings
+    medplum_hr_anomaly_sustained_seconds: int = 300  # 5 minutes for sustained anomaly
+    medplum_hr_buffer_ttl_hours: int = 2  # Keep 2 hours of HR data for aggregation
+    # Default HR thresholds (can be overridden per patient)
+    medplum_hr_high_resting: int = 100
+    medplum_hr_high_active: int = 150
+    medplum_hr_high_exercise: int = 180
+    medplum_hr_low_resting: int = 50
+    medplum_hr_low_sleeping: int = 40
+
     @model_validator(mode="after")
     def derive_svix_jwt_secret(self) -> "Settings":
         if self.svix_jwt_secret is None or self.svix_jwt_secret.get_secret_value() == "":

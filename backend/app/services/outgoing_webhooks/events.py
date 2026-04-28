@@ -3,6 +3,10 @@
 Call these functions after data is committed to the database.
 Each schedules a Celery task and returns immediately — Svix delivery
 happens in the worker process.
+
+Events are dispatched to both:
+- Svix (for developer webhooks)
+- Medplum (for FHIR integration, when enabled)
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ import re
 from typing import Any
 from uuid import UUID
 
+from app.config import settings
 from app.constants.webhooks.events import SERIES_TYPE_TO_GRANULAR_EVENT, SERIES_TYPE_TO_GROUP_EVENT
 from app.schemas.webhooks.event_types import WebhookEventType
 
@@ -55,6 +60,118 @@ def _dispatch(
         logger.warning("Could not enqueue webhook event %s", event_type, exc_info=True)
 
 
+def _dispatch_medplum_workout(
+    *,
+    user_id: UUID,
+    workout_data: dict[str, Any],
+    medplum_patient_id: str | None = None,
+) -> None:
+    """Schedule Medplum workout delivery task.
+
+    Silently skips if Medplum integration is not enabled.
+    """
+    if not settings.medplum_enabled:
+        return
+
+    try:
+        from app.integrations.celery.tasks.medplum_tasks import send_workout_to_medplum
+
+        send_workout_to_medplum.delay(
+            user_id=str(user_id),
+            workout_data=workout_data,
+            medplum_patient_id=medplum_patient_id,
+        )
+    except Exception:
+        logger.warning("Could not enqueue Medplum workout event", exc_info=True)
+
+
+def _dispatch_medplum_sleep(
+    *,
+    user_id: UUID,
+    sleep_data: dict[str, Any],
+    medplum_patient_id: str | None = None,
+) -> None:
+    """Schedule Medplum sleep delivery task.
+
+    Silently skips if Medplum integration is not enabled.
+    """
+    if not settings.medplum_enabled:
+        return
+
+    try:
+        from app.integrations.celery.tasks.medplum_tasks import send_sleep_to_medplum
+
+        send_sleep_to_medplum.delay(
+            user_id=str(user_id),
+            sleep_data=sleep_data,
+            medplum_patient_id=medplum_patient_id,
+        )
+    except Exception:
+        logger.warning("Could not enqueue Medplum sleep event", exc_info=True)
+
+
+def _dispatch_medplum_hr(
+    *,
+    user_id: UUID,
+    value: int,
+    timestamp: str,
+    source_provider: str,
+    source_device: str | None = None,
+    medplum_patient_id: str | None = None,
+) -> None:
+    """Schedule Medplum HR processing task.
+
+    HR data goes through context detection and anomaly processing.
+    Silently skips if Medplum integration is not enabled.
+    """
+    if not settings.medplum_enabled:
+        return
+
+    try:
+        from app.integrations.celery.tasks.medplum_tasks import process_hr_for_medplum
+
+        process_hr_for_medplum.delay(
+            user_id=str(user_id),
+            value=value,
+            timestamp=timestamp,
+            source_provider=source_provider,
+            source_device=source_device,
+            medplum_patient_id=medplum_patient_id,
+        )
+    except Exception:
+        logger.warning("Could not enqueue Medplum HR event", exc_info=True)
+
+
+def _dispatch_medplum_vitals(
+    *,
+    event_type: str,
+    user_id: UUID,
+    timestamp: str,
+    data: dict[str, Any],
+    medplum_patient_id: str | None = None,
+) -> None:
+    """Schedule Medplum vitals delivery task.
+
+    Used for low-frequency vitals like SpO2, weight, etc.
+    Silently skips if Medplum integration is not enabled.
+    """
+    if not settings.medplum_enabled:
+        return
+
+    try:
+        from app.integrations.celery.tasks.medplum_tasks import send_vitals_to_medplum
+
+        send_vitals_to_medplum.delay(
+            event_type=event_type,
+            user_id=str(user_id),
+            timestamp=timestamp,
+            data=data,
+            medplum_patient_id=medplum_patient_id,
+        )
+    except Exception:
+        logger.warning("Could not enqueue Medplum vitals event for %s", event_type, exc_info=True)
+
+
 def on_workout_created(
     *,
     record_id: UUID,
@@ -72,7 +189,9 @@ def on_workout_created(
     max_heart_rate_bpm: int | None = None,
     elevation_gain_meters: float | None = None,
     avg_pace_sec_per_km: int | None = None,
+    medplum_patient_id: str | None = None,
 ) -> None:
+    # Dispatch to Svix (developer webhooks)
     _dispatch(
         WebhookEventType.WORKOUT_CREATED,
         {
@@ -98,6 +217,28 @@ def on_workout_created(
         channels=[f"user.{user_id}"],
     )
 
+    # Dispatch to Medplum (FHIR integration)
+    _dispatch_medplum_workout(
+        user_id=user_id,
+        workout_data={
+            "id": str(record_id),
+            "type": workout_type,
+            "start_datetime": start_time,
+            "end_datetime": end_time,
+            "zone_offset": zone_offset,
+            "duration_seconds": duration_seconds,
+            "source_provider": provider,
+            "source_device": device,
+            "calories_kcal": calories_kcal,
+            "distance_meters": distance_meters,
+            "avg_heart_rate_bpm": avg_heart_rate_bpm,
+            "max_heart_rate_bpm": max_heart_rate_bpm,
+            "avg_pace_sec_per_km": avg_pace_sec_per_km,
+            "elevation_gain_meters": elevation_gain_meters,
+        },
+        medplum_patient_id=medplum_patient_id,
+    )
+
 
 def on_sleep_created(
     *,
@@ -112,7 +253,9 @@ def on_sleep_created(
     efficiency_percent: float | None = None,
     stages: dict[str, int | None] | None = None,
     is_nap: bool | None = None,
+    medplum_patient_id: str | None = None,
 ) -> None:
+    # Dispatch to Svix (developer webhooks)
     _dispatch(
         WebhookEventType.SLEEP_CREATED,
         {
@@ -134,6 +277,24 @@ def on_sleep_created(
         channels=[f"user.{user_id}"],
     )
 
+    # Dispatch to Medplum (FHIR integration)
+    _dispatch_medplum_sleep(
+        user_id=user_id,
+        sleep_data={
+            "id": str(record_id),
+            "start_datetime": start_time,
+            "end_datetime": end_time,
+            "zone_offset": zone_offset,
+            "duration_seconds": duration_seconds,
+            "source_provider": provider,
+            "source_device": device,
+            "efficiency_percent": efficiency_percent,
+            "stages": stages,
+            "is_nap": is_nap,
+        },
+        medplum_patient_id=medplum_patient_id,
+    )
+
 
 def on_timeseries_batch_saved(
     *,
@@ -144,6 +305,8 @@ def on_timeseries_batch_saved(
     start_time: str | None = None,
     end_time: str | None = None,
     samples: list[dict[str, Any]] | None = None,
+    medplum_patient_id: str | None = None,
+    source_device: str | None = None,
 ) -> None:
     """Emit one webhook event per data-type per ingestion batch.
 
@@ -216,6 +379,42 @@ def on_timeseries_batch_saved(
             }
             for event_type in event_types_to_emit:
                 _emit(event_type, data, base_key)
+
+    # Dispatch HR samples to Medplum for context detection and anomaly processing
+    # HR samples are processed individually for real-time anomaly detection
+    if series_type == "heart_rate" and samples:
+        for sample in samples:
+            value = sample.get("value")
+            timestamp = sample.get("timestamp")
+            if value is not None and timestamp is not None:
+                _dispatch_medplum_hr(
+                    user_id=user_id,
+                    value=int(value),
+                    timestamp=timestamp,
+                    source_provider=provider,
+                    source_device=source_device,
+                    medplum_patient_id=medplum_patient_id,
+                )
+
+    # Dispatch other vitals (SpO2, weight, BP, HRV, etc.) directly to Medplum
+    # These low-frequency vitals don't need aggregation
+    elif series_type in ("spo2", "blood_oxygen", "oxygen_saturation", "weight", "body_temperature", "respiratory_rate", "blood_pressure_systolic", "blood_pressure_diastolic", "heart_rate_variability_sdnn", "heart_rate_variability_rmssd") and samples:
+        for sample in samples:
+            value = sample.get("value")
+            timestamp = sample.get("timestamp")
+            if value is not None and timestamp is not None:
+                _dispatch_medplum_vitals(
+                    event_type=f"series.{series_type}.created",
+                    user_id=user_id,
+                    timestamp=timestamp,
+                    data={
+                        "value": value,
+                        "series_type": series_type,
+                        "source_provider": provider,
+                        "source_device": source_device,
+                    },
+                    medplum_patient_id=medplum_patient_id,
+                )
 
 
 def on_connection_created(
