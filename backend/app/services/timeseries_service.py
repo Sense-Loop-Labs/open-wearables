@@ -59,8 +59,11 @@ class TimeSeriesService(
 
         @sa_event.listens_for(db_session, "after_commit", once=True)
         def _start_webhook_thread(session: DbSession) -> None:  # noqa: ARG001
-            if not svix_service.is_enabled():
-                return
+            # Sense Loop Fork: Svix check removed to allow Medplum webhooks to work independently.
+            # Each dispatcher (Svix, Medplum) now handles its own enablement check internally.
+            # Original upstream code:
+            # if not svix_service.is_enabled():
+            #     return
             threading.Thread(
                 target=self._emit_timeseries_webhooks,
                 args=(samples_copy,),

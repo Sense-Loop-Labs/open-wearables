@@ -399,9 +399,16 @@ class EventRecordService(
         data_source: DataSource,
         detail: EventRecordDetailCreate,
     ) -> None:
-        """Fire the appropriate outgoing webhook for a newly created event record."""
-        if not svix_service.is_enabled():
-            return
+        """Fire the appropriate outgoing webhook for a newly created event record.
+
+        Dispatches to both Svix (developer webhooks) and Medplum (FHIR integration)
+        as configured. Each dispatcher handles its own enablement check internally.
+        """
+        # Sense Loop Fork: Svix check removed to allow Medplum webhooks to work independently.
+        # Each dispatcher (Svix, Medplum) now handles its own enablement check internally.
+        # Original upstream code:
+        # if not svix_service.is_enabled():
+        #     return
         category = (record.category or "").lower()
         provider = str(data_source.provider)
         device = data_source.device_model
@@ -479,7 +486,11 @@ class EventRecordService(
         """Bulk create event record details and fire one webhook per detail on commit."""
         self.event_record_detail_repo.bulk_create(db_session, details, detail_type=detail_type)  # type: ignore[arg-type]
 
-        if not details or not svix_service.is_enabled():
+        # Sense Loop Fork: Svix check removed to allow Medplum webhooks to work independently.
+        # Original upstream code:
+        # if not details or not svix_service.is_enabled():
+        #     return
+        if not details:
             return
 
         record_ids = [d.record_id for d in details if d.record_id is not None]
