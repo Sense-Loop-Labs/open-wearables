@@ -74,6 +74,16 @@ These files have behavioral changes that may conflict with upstream updates:
 
 **Marked with:** `# Sense Loop Fork:` comments showing original code
 
+#### `backend/app/services/apple/healthkit/sleep_service.py`
+
+**Changes:**
+- Added import for `on_sleep_created` from `app.services.outgoing_webhooks.events`
+- `finish_sleep()`: Added direct call to `on_sleep_created()` after creating sleep record
+
+**Why:** The `create_detail()` method registers its `after_commit` listener AFTER the commit has already happened (the underlying repository's `create()` method commits internally). This means the webhook is never dispatched. The fix calls `on_sleep_created()` directly after record creation, matching the pattern used in `create_or_merge_sleep()`.
+
+**Bug Details:** The `event_record_detail_repo.create()` method calls `db_session.commit()` on line 54. Then `create_detail()` registers the `after_commit` listener on line 119 - but the commit already happened, so the listener never fires.
+
 #### `docker-compose.yml`
 
 **Changes:**
@@ -105,6 +115,7 @@ git diff HEAD...upstream/main -- \
   backend/app/services/outgoing_webhooks/events.py \
   backend/app/services/event_record_service.py \
   backend/app/services/timeseries_service.py \
+  backend/app/services/apple/healthkit/sleep_service.py \
   backend/app/config.py
 ```
 
@@ -124,6 +135,11 @@ git merge upstream/main
    - Keep our Medplum dispatch calls at the end of each function
 
 3. **config.py:** Our Medplum settings are at the end - should merge cleanly unless upstream adds settings in the same location.
+
+4. **sleep_service.py:** If upstream modifies `finish_sleep()`:
+   - Keep our import of `on_sleep_created`
+   - Keep our direct call to `on_sleep_created()` after `create_detail()`
+   - This is necessary because the `after_commit` listener pattern in `create_detail()` doesn't work (the commit happens before the listener is registered)
 
 ## Environment Variables (Sense Loop Additions)
 

@@ -28,6 +28,7 @@ from app.schemas.providers.mobile_sdk import (
 )
 from app.services.apple.healthkit.device_resolution import extract_device_info
 from app.services.event_record_service import event_record_service
+from app.services.outgoing_webhooks.events import on_sleep_created
 from app.utils.structured_logging import log_structured
 
 logger = getLogger(__name__)
@@ -525,6 +526,34 @@ def finish_sleep(db_session: DbSession, user_id: str, state: SleepState) -> None
         # Always use the returned record's ID (whether newly created or existing)
         detail_for_record = detail.model_copy(update={"record_id": created_or_existing_record.id})
         event_record_service.create_detail(db_session, detail_for_record, detail_type="sleep")
+
+        # Dispatch webhook directly since the after_commit listener in create_detail()
+        # registers too late (after the commit has already happened).
+        has_stages = any([
+            detail_for_record.sleep_awake_minutes,
+            detail_for_record.sleep_light_minutes,
+            detail_for_record.sleep_deep_minutes,
+            detail_for_record.sleep_rem_minutes,
+        ])
+        on_sleep_created(
+            record_id=created_or_existing_record.id,
+            user_id=UUID(user_id),
+            provider=state.provider or state.source_name or "unknown",
+            device=state.device_model,
+            start_time=created_or_existing_record.start_datetime.isoformat(),
+            end_time=created_or_existing_record.end_datetime.isoformat(),
+            zone_offset=state.zone_offset,
+            duration_seconds=created_or_existing_record.duration_seconds,
+            efficiency_percent=float(sleep_efficiency) if sleep_efficiency is not None else None,
+            stages={
+                "awake_minutes": detail_for_record.sleep_awake_minutes,
+                "light_minutes": detail_for_record.sleep_light_minutes,
+                "deep_minutes": detail_for_record.sleep_deep_minutes,
+                "rem_minutes": detail_for_record.sleep_rem_minutes,
+            } if has_stages else None,
+            is_nap=detail_for_record.is_nap,
+        )
+
         # Delete from Redis only after a successful DB write so a transient error
         # keeps the session available for the next periodic finalization attempt.
         delete_sleep_state(user_id)

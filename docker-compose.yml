@@ -28,7 +28,7 @@ services:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis
+      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
     ports:
       - "8000:8000"
     depends_on:
@@ -66,7 +66,7 @@ services:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis
+      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
     depends_on:
       - redis
       - db
@@ -89,7 +89,7 @@ services:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis
+      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
     depends_on:
       - redis
       - db
@@ -112,7 +112,7 @@ services:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis
+      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
     ports:
       - 5555:5555
     depends_on:
@@ -152,7 +152,7 @@ services:
     environment:
       SVIX_DB_DSN: "postgresql://${DB_USER:-open-wearables}:${DB_PASSWORD:-open-wearables}@${DB_HOST:-db}:${DB_PORT:-5432}/svix"
       SVIX_QUEUE_TYPE: "redis"
-      SVIX_REDIS_DSN: "redis://redis:6379/1"
+      SVIX_REDIS_DSN: "redis://redis__open-wearables:6379/1"
       SVIX_CACHE_TYPE: "redis"
     ports:
       - "8071:8071"
