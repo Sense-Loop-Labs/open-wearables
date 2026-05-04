@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from logging import getLogger
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.config import settings
@@ -28,7 +29,8 @@ from app.schemas.providers.mobile_sdk import (
 )
 from app.services.apple.healthkit.device_resolution import extract_device_info
 from app.services.event_record_service import event_record_service
-from app.services.outgoing_webhooks.events import on_sleep_created
+# SENSE-LOOP: Added flush_medplum_sleep_batch import for batch webhook dispatch
+from app.services.outgoing_webhooks.events import flush_medplum_sleep_batch, on_sleep_created
 from app.utils.structured_logging import log_structured
 
 logger = getLogger(__name__)
@@ -124,6 +126,8 @@ def _apply_transition(
     source_name: str | None = None,
     device_model: str | None = None,
     zone_offset: str | None = None,
+    # SENSE-LOOP: Added collector parameter for batch webhook dispatch
+    medplum_sleep_collector: list[dict[str, Any]] | None = None,
 ) -> SleepState:
     """Apply a transition to the sleep state."""
 
@@ -143,7 +147,7 @@ def _apply_transition(
         delta_seconds = (start_time - state.end_time).total_seconds()
 
     if delta_seconds > settings.sleep_end_gap_minutes * 60:
-        finish_sleep(db_session, user_id, state)
+        finish_sleep(db_session, user_id, state, medplum_sleep_collector=medplum_sleep_collector)
         state = _create_new_sleep_state(start_time, end_time, uuid, provider, source_name, device_model, zone_offset)
 
     if zone_offset and not state.zone_offset:
@@ -232,6 +236,9 @@ def handle_sleep_data(
     redis_client = get_redis_client()
     lock = redis_client.lock(f"sleep:lock:{user_id}", timeout=30, blocking_timeout=15)
 
+    # SENSE-LOOP: Collect sleep sessions for batch dispatch to Medplum (avoids rate limiting)
+    medplum_sleep_collector: list[dict[str, Any]] = []
+
     try:
         acquired = lock.acquire()
         if not acquired:
@@ -293,6 +300,7 @@ def handle_sleep_data(
                 original_source_name,
                 device_model,
                 sjson.zoneOffset,
+                medplum_sleep_collector=medplum_sleep_collector,
             )
 
         # Persist the accumulated state to Redis only once after processing the entire batch
@@ -309,11 +317,18 @@ def handle_sleep_data(
             if session_end.tzinfo is None:
                 session_end = session_end.replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) - session_end >= timedelta(minutes=settings.sleep_end_gap_minutes):
-                finish_sleep(db_session, user_id, current_state)
+                finish_sleep(db_session, user_id, current_state, medplum_sleep_collector=medplum_sleep_collector)
 
     finally:
         with contextlib.suppress(Exception):
             lock.release()
+
+    # SENSE-LOOP: Flush collected sleep sessions to Medplum as a single batch
+    if medplum_sleep_collector:
+        flush_medplum_sleep_batch(
+            user_id=UUID(user_id),
+            sleep_sessions=medplum_sleep_collector,
+        )
 
     # import not at module level in order to avoid circular import
     from app.integrations.celery.tasks.finalize_stale_sleep_task import finalize_stale_sleeps
@@ -423,7 +438,13 @@ def _calculate_final_metrics(stages: list[SleepStateStage]) -> tuple[dict, list[
     return metrics, cleaned_stages
 
 
-def finish_sleep(db_session: DbSession, user_id: str, state: SleepState) -> None:
+def finish_sleep(
+    db_session: DbSession,
+    user_id: str,
+    state: SleepState,
+    # SENSE-LOOP: Added collector parameter for batch webhook dispatch to avoid rate limiting
+    medplum_sleep_collector: list[dict[str, Any]] | None = None,
+) -> None:
     """Finish a sleep session and save the record to the database.
 
     Before creating a new record the function checks whether an existing adjacent
@@ -434,6 +455,13 @@ def finish_sleep(db_session: DbSession, user_id: str, state: SleepState) -> None
     payload is finalized immediately (historical data is available right away) and
     each merge step extends the accumulated DB record until the whole night is
     represented as a single session.
+
+    Args:
+        db_session: Database session for persisting the record
+        user_id: User identifier
+        state: Sleep session state from Redis
+        medplum_sleep_collector: If provided, append sleep data to this list instead of
+            dispatching immediately to Medplum. Caller should flush the batch afterward.
     """
 
     # Recalculate metrics from stages to handle overlaps/duplicates
@@ -552,6 +580,8 @@ def finish_sleep(db_session: DbSession, user_id: str, state: SleepState) -> None
                 "rem_minutes": detail_for_record.sleep_rem_minutes,
             } if has_stages else None,
             is_nap=detail_for_record.is_nap,
+            # SENSE-LOOP: Pass collector for batch dispatch instead of immediate webhook
+            medplum_sleep_collector=medplum_sleep_collector,
         )
 
         # Delete from Redis only after a successful DB write so a transient error

@@ -58,7 +58,7 @@ class MedplumWebhook:
         payload: dict[str, Any],
         *,
         timeout: float = 30.0,
-        retries: int = 2,
+        retries: int = 4,  # SENSE-LOOP: Increased from 2 to 4 for better 429 recovery
     ) -> bool:
         """Send payload to Medplum webhook endpoint.
 
@@ -113,6 +113,18 @@ class MedplumWebhook:
                         headers["Authorization"] = f"Bearer {token}"
                     except Exception:
                         pass
+                # SENSE-LOOP: Add exponential backoff for 429 rate limit errors
+                # Using 2^(attempt+1) gives 2s, 4s, 8s, 16s, 32s = 62s total backoff
+                if e.response.status_code == 429:
+                    import asyncio
+                    backoff_seconds = 2 ** (attempt + 1)  # 2s, 4s, 8s, 16s, 32s
+                    logger.warning(
+                        "Rate limited by Medplum (429), backing off %ds before retry (attempt %d/%d)",
+                        backoff_seconds,
+                        attempt + 1,
+                        retries + 1,
+                    )
+                    await asyncio.sleep(backoff_seconds)
                 logger.warning(
                     "Medplum webhook HTTP error (attempt %d/%d): %s",
                     attempt + 1,
@@ -142,7 +154,7 @@ class MedplumWebhook:
         payload: dict[str, Any],
         *,
         timeout: float = 30.0,
-        retries: int = 2,
+        retries: int = 4,  # SENSE-LOOP: Increased from 2 to 4 for better 429 recovery
     ) -> bool:
         """Synchronous version of send for use in Celery tasks.
 
@@ -213,6 +225,18 @@ class MedplumWebhook:
                         headers["Authorization"] = f"Bearer {token}"
                     except Exception:
                         pass
+                # SENSE-LOOP: Add exponential backoff for 429 rate limit errors
+                # Using 2^(attempt+1) gives 2s, 4s, 8s, 16s, 32s = 62s total backoff
+                if e.response.status_code == 429:
+                    import time
+                    backoff_seconds = 2 ** (attempt + 1)  # 2s, 4s, 8s, 16s, 32s
+                    logger.warning(
+                        "Rate limited by Medplum (429), backing off %ds before retry (attempt %d/%d)",
+                        backoff_seconds,
+                        attempt + 1,
+                        retries + 1,
+                    )
+                    time.sleep(backoff_seconds)
                 logger.warning(
                     "Medplum webhook HTTP error (attempt %d/%d): %s",
                     attempt + 1,

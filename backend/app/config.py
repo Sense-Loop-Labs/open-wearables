@@ -206,6 +206,10 @@ class Settings(BaseSettings):
     medplum_hr_high_exercise: int = 180
     medplum_hr_low_resting: int = 50
     medplum_hr_low_sleeping: int = 40
+    # SENSE-LOOP: Batching settings for vitals dispatch to Medplum
+    # Batches reduce HTTP requests to avoid Medplum rate limits (429 errors)
+    medplum_vitals_batch_size: int = 500  # Max samples per batch request
+    medplum_historical_threshold_hours: int = 8  # Data older than this is flagged as historical
 
     @model_validator(mode="after")
     def derive_svix_jwt_secret(self) -> "Settings":
