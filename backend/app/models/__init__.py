@@ -9,6 +9,8 @@ from .developer import Developer
 from .device_type_priority import DeviceTypePriority
 from .event_record import EventRecord
 from .event_record_detail import EventRecordDetail
+# SENSE-LOOP: HR analysis models for anomaly detection and hourly aggregation
+from .hr_analysis import HRAnomaly, HRBaseline, HRHourlyAggregate
 from .invitation import Invitation
 from .personal_record import PersonalRecord
 from .provider_priority import ProviderPriority
@@ -29,6 +31,9 @@ __all__ = [
     "DataSource",
     "DataPointSeriesArchive",
     "DeviceTypePriority",
+    "HRAnomaly",
+    "HRBaseline",
+    "HRHourlyAggregate",
     "Invitation",
     "ProviderPriority",
     "ProviderSetting",

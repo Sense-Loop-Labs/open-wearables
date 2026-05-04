@@ -182,11 +182,14 @@ def _dispatch_medplum_hr(
     source_provider: str,
     source_device: str | None = None,
     medplum_patient_id: str | None = None,
+    is_historical: bool = False,
 ) -> None:
     """Schedule Medplum HR processing task.
 
     HR data goes through context detection and anomaly processing.
     Silently skips if Medplum integration is not enabled.
+
+    DEPRECATED: Use _dispatch_medplum_hr_batch for better efficiency.
     """
     if not settings.medplum_enabled:
         return
@@ -201,9 +204,82 @@ def _dispatch_medplum_hr(
             source_provider=source_provider,
             source_device=source_device,
             medplum_patient_id=medplum_patient_id,
+            is_historical=is_historical,
         )
     except Exception:
         logger.warning("Could not enqueue Medplum HR event", exc_info=True)
+
+
+def _dispatch_medplum_hr_batch(
+    *,
+    user_id: UUID,
+    readings: list[dict[str, Any]],
+    source_provider: str,
+    source_device: str | None = None,
+    medplum_patient_id: str | None = None,
+) -> None:
+    """Schedule Medplum HR batch processing task.
+
+    Uses efficient batch context detection and handles historical data.
+    HR data goes through context detection and anomaly processing.
+
+    Automatically determines if data is historical based on timestamps.
+    Silently skips if Medplum integration is not enabled.
+    """
+    if not settings.medplum_enabled:
+        return
+
+    if not readings:
+        return
+
+    try:
+        from app.integrations.celery.tasks.medplum_tasks import process_hr_batch_for_medplum
+
+        # Determine if this batch is historical based on the most recent reading
+        historical_threshold = timedelta(hours=settings.medplum_historical_threshold_hours)
+        now = datetime.now(timezone.utc)
+
+        batch_timestamps = []
+        for reading in readings:
+            ts_str = reading.get("timestamp")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    batch_timestamps.append(ts)
+                except (ValueError, TypeError):
+                    pass
+
+        is_historical = False
+        if batch_timestamps:
+            newest_reading = max(batch_timestamps)
+            is_historical = (now - newest_reading) > historical_threshold
+
+        # Use apply_async with small countdown to stagger with other tasks
+        process_hr_batch_for_medplum.apply_async(
+            kwargs={
+                "user_id": str(user_id),
+                "readings": readings,
+                "source_provider": source_provider,
+                "source_device": source_device,
+                "medplum_patient_id": medplum_patient_id,
+                "is_historical": is_historical,
+            },
+            countdown=0.5,  # Small delay
+        )
+
+        logger.debug(
+            "Enqueued Medplum HR batch: user=%s, count=%d, is_historical=%s",
+            user_id,
+            len(readings),
+            is_historical,
+        )
+
+    except Exception:
+        logger.warning(
+            "Could not enqueue Medplum HR batch (%d readings)",
+            len(readings),
+            exc_info=True,
+        )
 
 
 def _dispatch_medplum_vitals(
@@ -573,40 +649,58 @@ def on_timeseries_batch_saved(
                 _emit(event_type, data, base_key)
 
     # Dispatch vitals to Medplum using batched delivery to avoid rate limiting
-    # All vitals (including HR) are batched for efficient delivery
-    # The batch function handles splitting into chunks and flagging historical data
-    medplum_vitals_types = (
-        "heart_rate",
-        "spo2",
-        "blood_oxygen",
-        "oxygen_saturation",
-        "weight",
-        "body_temperature",
-        "respiratory_rate",
-        "blood_pressure_systolic",
-        "blood_pressure_diastolic",
-        "heart_rate_variability_sdnn",
-        "heart_rate_variability_rmssd",
-    )
+    # HR uses specialized processing with context detection and anomaly alerts
+    # Other vitals are batched for efficient delivery
 
-    if series_type in medplum_vitals_types and samples:
-        # Filter to valid samples only
-        valid_samples = [
+    if series_type == "heart_rate" and samples:
+        # HR needs special processing with context detection and anomaly detection
+        valid_readings = [
             {"value": s.get("value"), "timestamp": s.get("timestamp")}
             for s in samples
             if s.get("value") is not None and s.get("timestamp") is not None
         ]
 
-        if valid_samples:
-            _dispatch_medplum_vitals_batch(
-                event_type=f"series.{series_type}.created",
+        if valid_readings:
+            _dispatch_medplum_hr_batch(
                 user_id=user_id,
-                samples=valid_samples,
-                series_type=series_type,
+                readings=valid_readings,
                 source_provider=provider,
                 source_device=source_device,
                 medplum_patient_id=medplum_patient_id,
             )
+    else:
+        # Other vitals use the generic batch path (no anomaly detection)
+        medplum_vitals_types = (
+            "spo2",
+            "blood_oxygen",
+            "oxygen_saturation",
+            "weight",
+            "body_temperature",
+            "respiratory_rate",
+            "blood_pressure_systolic",
+            "blood_pressure_diastolic",
+            "heart_rate_variability_sdnn",
+            "heart_rate_variability_rmssd",
+        )
+
+        if series_type in medplum_vitals_types and samples:
+            # Filter to valid samples only
+            valid_samples = [
+                {"value": s.get("value"), "timestamp": s.get("timestamp")}
+                for s in samples
+                if s.get("value") is not None and s.get("timestamp") is not None
+            ]
+
+            if valid_samples:
+                _dispatch_medplum_vitals_batch(
+                    event_type=f"series.{series_type}.created",
+                    user_id=user_id,
+                    samples=valid_samples,
+                    series_type=series_type,
+                    source_provider=provider,
+                    source_device=source_device,
+                    medplum_patient_id=medplum_patient_id,
+                )
 
 
 def on_connection_created(

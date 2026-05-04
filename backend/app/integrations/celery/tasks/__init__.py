@@ -35,10 +35,16 @@ from .garmin.backfill_trigger import (
     trigger_backfill_for_type as trigger_garmin_backfill_for_type,
 )
 from .garmin.gc_task import gc_stuck_backfills
+
+# SENSE-LOOP: Medplum FHIR integration tasks for clinical data sync
 from .medplum_tasks import (
     aggregate_hr_hourly,
+    calculate_hr_baselines,
+    process_hr_batch_for_medplum,
     process_hr_for_medplum,
+    send_sleep_batch_to_medplum,
     send_sleep_to_medplum,
+    send_vitals_batch_to_medplum,
     send_vitals_to_medplum,
     send_workout_to_medplum,
 )
@@ -84,8 +90,12 @@ __all__ = [
     "emit_webhook_event",
     # Medplum FHIR integration (Sense Loop Addition)
     "process_hr_for_medplum",
+    "process_hr_batch_for_medplum",
     "aggregate_hr_hourly",
+    "calculate_hr_baselines",
     "send_vitals_to_medplum",
+    "send_vitals_batch_to_medplum",
     "send_workout_to_medplum",
     "send_sleep_to_medplum",
+    "send_sleep_batch_to_medplum",
 ]

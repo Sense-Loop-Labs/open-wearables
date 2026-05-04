@@ -1,5 +1,7 @@
 """Heart Rate Processing Service for Medplum Integration.
 
+SENSE-LOOP ADDITION: This entire module is a Sense Loop addition for clinical HR monitoring.
+
 Handles:
 - Real-time anomaly detection with context-aware thresholds
 - Redis buffering for aggregation
@@ -31,6 +33,7 @@ class HRContext(str, Enum):
     ACTIVE = "active"
     SLEEPING = "sleeping"
     EXERCISING = "exercising"
+    POST_WORKOUT = "post_workout"  # Recovery period after workout ends
     UNKNOWN = "unknown"
 
 
@@ -87,6 +90,17 @@ class HRAggregation:
     reading_count: int
     user_id: UUID
     medplum_patient_id: str | None
+
+
+@dataclass
+class SustainedAnomaly:
+    """Represents a sustained HR anomaly detected over a time window."""
+
+    avg_hr: float
+    max_hr: int
+    reading_count: int
+    duration_minutes: int
+    reason: str  # e.g., 'sustained_elevated_resting_hr'
 
 
 class HRProcessor:
@@ -155,8 +169,8 @@ class HRProcessor:
                 return "low_resting"
 
         elif context == HRContext.SLEEPING:
-            # Still alert for high HR during sleep
-            if value > thresholds.high_resting:
+            # Still alert for high HR during sleep, but with slightly higher threshold
+            if value > thresholds.high_resting + 20:  # e.g., > 120
                 return "high_sleeping"
             if value < thresholds.low_sleeping:
                 return "low_sleeping"
@@ -166,8 +180,15 @@ class HRProcessor:
                 return "high_active"
 
         elif context == HRContext.EXERCISING:
+            # Never alert during exercise - elevated HR is expected
             if value > thresholds.high_exercise:
                 return "high_exercise"
+
+        elif context == HRContext.POST_WORKOUT:
+            # More lenient during recovery - only alert if very high
+            # Elevated HR after workout is expected during recovery
+            if value > thresholds.high_active + 20:  # e.g., > 170
+                return "slow_recovery"
 
         else:  # UNKNOWN - use conservative resting thresholds
             if value > thresholds.high_resting:
@@ -379,3 +400,114 @@ class HRProcessor:
             logger.warning("Redis error scanning for HR buffer keys", exc_info=True)
 
         return user_ids
+
+    # ============ Sustained Anomaly Detection ============
+
+    def is_potential_anomaly(
+        self,
+        reading: HRReading,
+        thresholds: HRThresholds | None = None,
+    ) -> bool:
+        """Check if a reading is a potential anomaly based on context.
+
+        Returns True if the reading exceeds thresholds for its context.
+        Does not check if the anomaly is sustained.
+        """
+        thresholds = thresholds or HRThresholds.from_settings()
+        return self._check_anomaly(reading, thresholds) is not None
+
+    def buffer_potential_anomaly(self, reading: HRReading) -> None:
+        """Buffer a reading that might be anomalous.
+
+        Uses a separate buffer for potential anomalies to track
+        sustained elevation over the 5-minute window.
+        """
+        key = f"{self.REDIS_KEY_PREFIX}:anomaly_buffer:{reading.user_id}"
+
+        data = json.dumps({
+            "value": reading.value,
+            "context": reading.context.value,
+            "timestamp": reading.timestamp.isoformat(),
+        })
+
+        try:
+            self.redis.zadd(key, {data: reading.timestamp.timestamp()})
+            # Short TTL - only need to track for anomaly window
+            self.redis.expire(key, 600)  # 10 minute TTL
+        except redis.RedisError:
+            logger.warning("Redis error buffering potential anomaly", exc_info=True)
+
+    def check_sustained_anomaly(
+        self,
+        user_id: UUID,
+        current_time: datetime,
+        window_minutes: int | None = None,
+        min_readings: int | None = None,
+    ) -> SustainedAnomaly | None:
+        """Check if we have sustained elevation over the anomaly window.
+
+        Returns a SustainedAnomaly if:
+        - At least min_readings readings in the window
+        - Majority are elevated AND in resting context
+        """
+        window_minutes = window_minutes or settings.hr_anomaly_sustained_minutes
+        min_readings = min_readings or settings.hr_anomaly_min_readings
+
+        key = f"{self.REDIS_KEY_PREFIX}:anomaly_buffer:{user_id}"
+        window_start = current_time - timedelta(minutes=window_minutes)
+
+        try:
+            # Get readings from the anomaly buffer
+            readings_raw = self.redis.zrangebyscore(
+                key,
+                min=window_start.timestamp(),
+                max=current_time.timestamp(),
+            )
+        except redis.RedisError:
+            logger.warning("Redis error checking sustained anomaly", exc_info=True)
+            return None
+
+        if len(readings_raw) < min_readings:
+            return None
+
+        # Parse readings
+        readings = []
+        for item in readings_raw:
+            try:
+                data = json.loads(item)
+                readings.append(data)
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+        if len(readings) < min_readings:
+            return None
+
+        # Filter to only resting context readings
+        resting_elevated = [
+            r for r in readings
+            if r.get("context") == HRContext.RESTING.value
+        ]
+
+        if len(resting_elevated) < min_readings:
+            return None  # Not sustained while resting
+
+        # Calculate statistics
+        values = [r["value"] for r in resting_elevated]
+        avg_hr = sum(values) / len(values)
+        max_hr = max(values)
+
+        return SustainedAnomaly(
+            avg_hr=avg_hr,
+            max_hr=max_hr,
+            reading_count=len(resting_elevated),
+            duration_minutes=window_minutes,
+            reason="sustained_elevated_resting_hr",
+        )
+
+    def clear_anomaly_buffer(self, user_id: UUID) -> None:
+        """Clear the anomaly buffer after alert is sent."""
+        key = f"{self.REDIS_KEY_PREFIX}:anomaly_buffer:{user_id}"
+        try:
+            self.redis.delete(key)
+        except redis.RedisError:
+            logger.warning("Redis error clearing anomaly buffer", exc_info=True)

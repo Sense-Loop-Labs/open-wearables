@@ -211,6 +211,13 @@ class Settings(BaseSettings):
     medplum_vitals_batch_size: int = 500  # Max samples per batch request
     medplum_historical_threshold_hours: int = 8  # Data older than this is flagged as historical
 
+    # HR anomaly detection settings (Sense Loop Addition)
+    # Used by context_detector.py and hr_processor.py for intelligent HR alerting
+    hr_anomaly_sustained_minutes: int = 5  # Wait 5 min before alerting for sustained anomaly
+    hr_anomaly_min_readings: int = 3  # Require 3+ readings before confirming anomaly
+    hr_active_energy_threshold_kcal: float = 40.0  # Active if > 40 kcal burned in 10 min window
+    hr_post_workout_recovery_minutes: int = 30  # Recovery period after workout ends
+
     @model_validator(mode="after")
     def derive_svix_jwt_secret(self) -> "Settings":
         if self.svix_jwt_secret is None or self.svix_jwt_secret.get_secret_value() == "":

@@ -138,6 +138,21 @@ def create_celery() -> Celery:
             "args": (),
             "kwargs": {},
         },
+        # SENSE-LOOP: Medplum HR processing tasks
+        # aggregate-hr-hourly: Sends hourly HR averages to Medplum (reduces data volume)
+        # calculate-hr-baselines-nightly: Computes personalized HR baselines for anomaly detection
+        "aggregate-hr-hourly": {
+            "task": "app.integrations.celery.tasks.medplum_tasks.aggregate_hr_hourly",
+            "schedule": crontab(minute=5),  # Run at :05 past every hour
+            "args": (),
+            "kwargs": {},
+        },
+        "calculate-hr-baselines-nightly": {
+            "task": "app.integrations.celery.tasks.medplum_tasks.calculate_hr_baselines",
+            "schedule": crontab(hour=4, minute=0),  # Daily at 04:00 UTC
+            "args": (),
+            "kwargs": {},
+        },
     }
 
     return celery_app
