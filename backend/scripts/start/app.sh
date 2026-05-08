@@ -29,6 +29,10 @@ uv run python scripts/init/seed_series_types.py
 echo 'Initializing archival settings...'
 uv run python scripts/init/seed_archival_settings.py
 
+# Seed Sense Loop application and API key for Medplum integration
+echo 'Seeding Sense Loop application...'
+uv run python scripts/init/seed_sense_loop.py
+
 # Register webhook event types with Svix (with retry, non-fatal)
 echo 'Registering webhook event types...'
 for i in 1 2 3; do
