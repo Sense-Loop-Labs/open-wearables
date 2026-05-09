@@ -29,6 +29,7 @@ uv run python scripts/init/seed_series_types.py
 echo 'Initializing archival settings...'
 uv run python scripts/init/seed_archival_settings.py
 
+# *** Do we want to make this conditional and only run when building a local environment? **
 # Seed Sense Loop application and API key for Medplum integration
 echo 'Seeding Sense Loop application...'
 uv run python scripts/init/seed_sense_loop.py
