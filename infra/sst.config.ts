@@ -15,9 +15,13 @@
  *    npx sst secret set MedplumClientId "<client-id>" --stage staging
  *    npx sst secret set MedplumClientSecret "<client-secret>" --stage staging
  *
- * Deployment:
- *    npx sst deploy --stage staging
- *    npx sst deploy --stage production
+ * Deployment (API only):
+ *    npm run deploy:staging
+ *    npm run deploy:production
+ *
+ * Deployment (with Frontend dashboard):
+ *    DEPLOY_FRONTEND=true npm run deploy:staging
+ *    DEPLOY_FRONTEND=true npm run deploy:production
  */
 
 export default $config({
@@ -52,6 +56,10 @@ export default $config({
     const garminClientSecret = new sst.Secret("GarminClientSecret");
     const fitbitClientId = new sst.Secret("FitbitClientId");
     const fitbitClientSecret = new sst.Secret("FitbitClientSecret");
+
+    // Optional frontend deployment
+    // Set DEPLOY_FRONTEND=true environment variable or pass --deploy-frontend flag
+    const deployFrontend = process.env.DEPLOY_FRONTEND === "true";
 
     // ================================================================
     // IMPORT SHARED VPC
@@ -283,8 +291,8 @@ export default $config({
         ...sharedEnv,
         CORS_ORIGINS: JSON.stringify(
           isProduction
-            ? ["https://app.senseloop.health", "https://dashboard.senseloop.health"]
-            : ["https://app.staging.senseloop.health", "http://localhost:3000"]
+            ? ["https://app.senseloop.health", "https://dashboard.senseloop.health", "https://dashboard.wearables.senseloop.health"]
+            : ["https://app.staging.senseloop.health", "https://dashboard.wearables.staging.sf-coder.com", "http://localhost:3000"]
         ),
       },
       health: {
@@ -358,14 +366,95 @@ export default $config({
     });
 
     // ================================================================
+    // FRONTEND (Optional)
+    // ================================================================
+    // To deploy with frontend: DEPLOY_FRONTEND=true npm run deploy:staging
+    // To deploy without frontend: npm run deploy:staging
+
+    const frontendDomain = isProduction
+      ? "dashboard.wearables.senseloop.health"
+      : "dashboard.wearables.staging.sf-coder.com";
+
+    let frontendUrl: string | undefined;
+
+    if (deployFrontend) {
+      // Frontend security group
+      const frontendSecurityGroup = new aws.ec2.SecurityGroup("FrontendSecurityGroup", {
+        vpcId: vpc.id,
+        description: "Security group for Open Wearables Frontend",
+        ingress: [
+          {
+            protocol: "tcp",
+            fromPort: 3000,
+            toPort: 3000,
+            cidrBlocks: ["10.0.0.0/16"],
+          },
+        ],
+        egress: [
+          {
+            protocol: "-1",
+            fromPort: 0,
+            toPort: 0,
+            cidrBlocks: ["0.0.0.0/0"],
+          },
+        ],
+      });
+
+      const frontend = new sst.aws.Service("Frontend", {
+        cluster,
+        cpu: "0.25 vCPU",
+        memory: "0.5 GB",
+        image: {
+          context: "../frontend",
+          dockerfile: "Dockerfile",
+          args: {
+            VITE_API_URL: `https://${isProduction ? "wearables.senseloop.health" : "wearables.staging.sf-coder.com"}`,
+          },
+        },
+        health: {
+          command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
+          interval: "30 seconds",
+          timeout: "5 seconds",
+        },
+        scaling: { min: 1, max: 2 },
+        vpc: {
+          id: vpcId,
+          publicSubnets: publicSubnetIds,
+          privateSubnets: privateSubnetIds,
+          securityGroups: [frontendSecurityGroup.id],
+        },
+        loadBalancer: {
+          domain: frontendDomain,
+          rules: [{ listen: "443/https", forward: "3000/http" }],
+        },
+        logging: {
+          retention: "1 month",
+        },
+        transform: {
+          loadBalancer: {
+            subnets: publicSubnetIds,
+          },
+        },
+      });
+
+      frontendUrl = `https://${frontendDomain}`;
+    }
+
+    // ================================================================
     // OUTPUTS
     // ================================================================
-    return {
+    const outputs: Record<string, unknown> = {
       apiUrl: api.url,
       dbHost: db.address,
       dbName: db.dbName,
       redisHost: redis.cacheNodes[0].address,
       vpcId: vpcId,
     };
+
+    if (frontendUrl) {
+      outputs.frontendUrl = frontendUrl;
+    }
+
+    return outputs;
   },
 });
