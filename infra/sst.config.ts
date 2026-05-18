@@ -218,7 +218,13 @@ export default $config({
           protocol: "tcp",
           fromPort: 8000,
           toPort: 8000,
-          cidrBlocks: ["10.0.0.0/16"], // Allow from within VPC
+          cidrBlocks: ["10.0.0.0/16"], // Allow API from within VPC
+        },
+        {
+          protocol: "tcp",
+          fromPort: 3000,
+          toPort: 3000,
+          cidrBlocks: ["10.0.0.0/16"], // Allow Frontend from within VPC
         },
       ],
       egress: [
@@ -378,28 +384,6 @@ export default $config({
     let frontendUrl: string | undefined;
 
     if (deployFrontend) {
-      // Frontend security group
-      const frontendSecurityGroup = new aws.ec2.SecurityGroup("FrontendSecurityGroup", {
-        vpcId: vpc.id,
-        description: "Security group for Open Wearables Frontend",
-        ingress: [
-          {
-            protocol: "tcp",
-            fromPort: 3000,
-            toPort: 3000,
-            cidrBlocks: ["10.0.0.0/16"],
-          },
-        ],
-        egress: [
-          {
-            protocol: "-1",
-            fromPort: 0,
-            toPort: 0,
-            cidrBlocks: ["0.0.0.0/0"],
-          },
-        ],
-      });
-
       const frontend = new sst.aws.Service("Frontend", {
         cluster,
         cpu: "0.25 vCPU",
@@ -411,17 +395,13 @@ export default $config({
             VITE_API_URL: `https://${isProduction ? "wearables.senseloop.health" : "wearables.staging.sf-coder.com"}`,
           },
         },
-        health: {
-          command: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
-          interval: "30 seconds",
-          timeout: "5 seconds",
-        },
+        // No container health check - rely on ALB health check only
         scaling: { min: 1, max: 2 },
         vpc: {
           id: vpcId,
           publicSubnets: publicSubnetIds,
           privateSubnets: privateSubnetIds,
-          securityGroups: [frontendSecurityGroup.id],
+          securityGroups: [clusterSecurityGroup.id],
         },
         loadBalancer: {
           domain: frontendDomain,
