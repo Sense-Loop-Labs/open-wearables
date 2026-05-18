@@ -1,0 +1,21 @@
+{
+  "name": "open-wearables-infra",
+  "version": "1.0.0",
+  "description": "SST infrastructure for Open Wearables (Sense Loop deployment)",
+  "type": "module",
+  "scripts": {
+    "dev": "sst dev",
+    "deploy:staging": "sst deploy --stage staging",
+    "deploy:production": "sst deploy --stage production",
+    "remove:staging": "sst remove --stage staging",
+    "secret:set": "sst secret set",
+    "secret:list": "sst secret list"
+  },
+  "dependencies": {
+    "sst": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

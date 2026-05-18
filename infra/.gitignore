@@ -1,0 +1,5 @@
+# SST
+.sst/
+
+# Dependencies
+node_modules/
