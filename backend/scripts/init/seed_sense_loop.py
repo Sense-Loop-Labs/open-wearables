@@ -77,10 +77,16 @@ def seed_sense_loop() -> None:
         # Check if application already exists
         existing_app = get_application_by_name(db, APPLICATION_NAME)
         if existing_app:
-            print(f"Application '{APPLICATION_NAME}' already exists:")
-            print(f"  App ID: {existing_app.app_id}")
-            print("  (Secret cannot be retrieved - rotate if needed)")
+            # Rotate secret so we always have valid credentials available
+            print(f"Application '{APPLICATION_NAME}' already exists, rotating secret...")
+            _, plain_secret = application_service.rotate_secret(
+                db, existing_app.app_id, admin.id
+            )
+            db.commit()  # Commit the rotated secret to the database
+            print(f"  App ID:     {existing_app.app_id}")
+            print(f"  App Secret: {plain_secret}")
             credentials["app_id"] = existing_app.app_id
+            credentials["app_secret"] = plain_secret
         else:
             # Create application
             application, plain_secret = application_service.create_application(
