@@ -50,6 +50,8 @@ export default $config({
     const secretKey = new sst.Secret("SecretKey");
     const medplumClientId = new sst.Secret("MedplumClientId");
     const medplumClientSecret = new sst.Secret("MedplumClientSecret");
+    // Webhook URL to FHIR Conversion Bot (format: https://api.xxx/fhir/R4/Bot/{BOT_ID}/$execute)
+    const medplumWebhookUrl = new sst.Secret("MedplumWebhookUrl");
 
     // Wearable provider OAuth credentials (add as needed)
     const garminClientId = new sst.Secret("GarminClientId");
@@ -268,9 +270,7 @@ export default $config({
 
       // Medplum integration
       MEDPLUM_ENABLED: "true",
-      MEDPLUM_BASE_URL: isProduction
-        ? "https://api.senseloop.health"
-        : "https://api.staging.senseloop.health",
+      MEDPLUM_WEBHOOK_URL: medplumWebhookUrl.value,
       MEDPLUM_CLIENT_ID: medplumClientId.value,
       MEDPLUM_CLIENT_SECRET: medplumClientSecret.value,
 
