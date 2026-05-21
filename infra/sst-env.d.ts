@@ -21,6 +21,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Frontend": {
+      "type": "sst.aws.Service"
+      "url": string
+    }
     "GarminClientId": {
       "type": "sst.sst.Secret"
       "value": string
@@ -34,6 +38,10 @@ declare module "sst" {
       "value": string
     }
     "MedplumClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "MedplumWebhookUrl": {
       "type": "sst.sst.Secret"
       "value": string
     }
