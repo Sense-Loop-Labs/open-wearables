@@ -63,6 +63,16 @@ export default $config({
     // Set DEPLOY_FRONTEND=true environment variable or pass --deploy-frontend flag
     const deployFrontend = process.env.DEPLOY_FRONTEND === "true";
 
+    // Cost optimization mode - reduces log retention for staging (~$3/month savings)
+    // Set COST_OPTIMIZED=true to enable
+    const costOptimized = process.env.COST_OPTIMIZED === "true";
+    const logRetention = (costOptimized && !isProduction) ? "1 month" : "7 years";
+
+    if (costOptimized && !isProduction) {
+      console.log("\n⚠️  COST_OPTIMIZED=true: Log retention reduced to 1 month (~$3/month savings)");
+      console.log("   To restore full infrastructure: COST_OPTIMIZED=false npm run deploy:staging\n");
+    }
+
     // ================================================================
     // IMPORT SHARED VPC
     // ================================================================
@@ -322,7 +332,7 @@ export default $config({
         rules: [{ listen: "443/https", forward: "8000/http" }],
       },
       logging: {
-        retention: "7 years", // HIPAA compliance
+        retention: logRetention, // HIPAA: 7 years in production, 1 month if COST_OPTIMIZED
       },
       transform: {
         loadBalancer: {
@@ -348,7 +358,7 @@ export default $config({
         ? { min: 2, max: 10 }
         : { min: 1, max: 2 },
       logging: {
-        retention: "7 years",
+        retention: logRetention,
       },
     });
 
@@ -367,7 +377,7 @@ export default $config({
       environment: sharedEnv,
       // Beat must be a singleton - no scaling
       logging: {
-        retention: "7 years",
+        retention: logRetention,
       },
     });
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "sst dev",
     "deploy:staging": "sst deploy --stage staging",
+    "deploy:staging:cost-optimized": "COST_OPTIMIZED=true sst deploy --stage staging",
     "deploy:staging:with-frontend": "DEPLOY_FRONTEND=true sst deploy --stage staging",
     "deploy:production": "sst deploy --stage production",
     "deploy:production:with-frontend": "DEPLOY_FRONTEND=true sst deploy --stage production",
