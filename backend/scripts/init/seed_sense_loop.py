@@ -77,16 +77,11 @@ def seed_sense_loop() -> None:
         # Check if application already exists
         existing_app = get_application_by_name(db, APPLICATION_NAME)
         if existing_app:
-            # Rotate secret so we always have valid credentials available
-            print(f"Application '{APPLICATION_NAME}' already exists, rotating secret...")
-            _, plain_secret = application_service.rotate_secret(
-                db, existing_app.app_id, admin.id
-            )
-            db.commit()  # Commit the rotated secret to the database
-            print(f"  App ID:     {existing_app.app_id}")
-            print(f"  App Secret: {plain_secret}")
+            # Don't rotate - keep existing secret to avoid breaking Medplum integration
+            print(f"Application '{APPLICATION_NAME}' already exists (app_id: {existing_app.app_id})")
+            print("  Skipping secret rotation to preserve Medplum secrets sync")
             credentials["app_id"] = existing_app.app_id
-            credentials["app_secret"] = plain_secret
+            # Note: app_secret not included since we don't have the plaintext
         else:
             # Create application
             application, plain_secret = application_service.create_application(
