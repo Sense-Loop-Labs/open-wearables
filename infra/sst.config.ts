@@ -315,6 +315,7 @@ export default $config({
         command: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"],
         interval: "30 seconds",
         timeout: "5 seconds",
+        startPeriod: "3 minutes", // Allow time for initialization scripts
       },
       scaling: isProduction
         ? { min: 2, max: 10, cpuUtilization: 70 }
@@ -337,6 +338,9 @@ export default $config({
       transform: {
         loadBalancer: {
           subnets: publicSubnetIds,
+        },
+        service: {
+          healthCheckGracePeriodSeconds: 300, // 5 min grace for initialization
         },
       },
     });
