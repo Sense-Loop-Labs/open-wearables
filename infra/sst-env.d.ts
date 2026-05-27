@@ -6,48 +6,6 @@
 
 declare module "sst" {
   export interface Resource {
-    "Api": {
-      "type": "sst.aws.Service"
-      "url": string
-    }
-    "Beat": {
-      "type": "sst.aws.Service"
-    }
-    "FitbitClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "FitbitClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "GarminClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "GarminClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "MedplumClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "MedplumClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "MedplumWebhookUrl": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "SecretKey": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "Worker": {
-      "type": "sst.aws.Service"
-    }
   }
 }
 /// <reference path="sst-env.d.ts" />
