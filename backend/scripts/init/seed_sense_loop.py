@@ -5,7 +5,9 @@ This script creates:
 1. "Sense Loop Mobile" application (for iOS app authentication)
 2. API key (for Patient Creation Bot to create users)
 
-Credentials are saved to /tmp/sense-loop-credentials.json on first creation.
+Credentials are saved to:
+- /tmp/sense-loop-credentials.json (for local retrieval)
+- AWS SSM Parameter Store (for automated integration with Medplum)
 
 Usage: python -m scripts.init.seed_sense_loop
 """
@@ -13,6 +15,9 @@ Usage: python -m scripts.init.seed_sense_loop
 import json
 import os
 from pathlib import Path
+
+import boto3
+from botocore.exceptions import ClientError
 
 from app.config import settings
 from app.database import SessionLocal
@@ -23,6 +28,9 @@ from app.services.application_service import application_service
 APPLICATION_NAME = "Sense Loop Mobile"
 API_KEY_NAME = "Medplum Patient Creation Bot"
 CREDENTIALS_FILE = Path("/tmp/sense-loop-credentials.json")
+
+# SSM parameter paths - credentials stored here for Medplum integration
+SSM_PARAM_PREFIX = "/sense-loop/{stage}/open-wearables"
 
 
 def get_admin_developer(db) -> Developer | None:
@@ -40,8 +48,67 @@ def get_api_key_by_name(db, name: str) -> ApiKey | None:
     return db.query(ApiKey).filter(ApiKey.name == name).first()
 
 
+def save_credentials_to_ssm(credentials: dict, stage: str) -> bool:
+    """Save credentials to AWS SSM Parameter Store.
+
+    Parameters are stored as SecureString for encryption at rest.
+    Returns True if successful, False otherwise.
+    """
+    if stage == "local":
+        print("  Skipping SSM (local environment)")
+        return False
+
+    try:
+        ssm = boto3.client("ssm", region_name="us-west-2")
+        prefix = SSM_PARAM_PREFIX.format(stage=stage)
+
+        # Map credential keys to SSM parameter names
+        param_map = {
+            "app_id": "app-id",
+            "app_secret": "app-secret",
+            "api_key": "api-key",
+        }
+
+        for key, param_name in param_map.items():
+            if key in credentials:
+                param_path = f"{prefix}/{param_name}"
+                try:
+                    ssm.put_parameter(
+                        Name=param_path,
+                        Value=credentials[key],
+                        Type="SecureString",
+                        Overwrite=True,
+                        Description=f"Open Wearables {key} for Sense Loop integration",
+                        Tags=[
+                            {"Key": "Project", "Value": "SenseLoop"},
+                            {"Key": "Stage", "Value": stage},
+                            {"Key": "Component", "Value": "OpenWearables"},
+                        ],
+                    )
+                    print(f"  ✓ Saved {param_path} to SSM")
+                except ClientError as e:
+                    # Tags can only be set on create, not update - retry without tags
+                    if "TagResource" in str(e) or "ValidationException" in str(e):
+                        ssm.put_parameter(
+                            Name=param_path,
+                            Value=credentials[key],
+                            Type="SecureString",
+                            Overwrite=True,
+                            Description=f"Open Wearables {key} for Sense Loop integration",
+                        )
+                        print(f"  ✓ Updated {param_path} in SSM")
+                    else:
+                        raise
+
+        return True
+    except Exception as e:
+        print(f"  Warning: Failed to save to SSM: {e}")
+        print("  Credentials still available in /tmp/sense-loop-credentials.json")
+        return False
+
+
 def save_credentials(credentials: dict) -> None:
-    """Save credentials to file for later retrieval."""
+    """Save credentials to file and SSM for later retrieval."""
     # Load existing credentials if any
     existing = {}
     if CREDENTIALS_FILE.exists():
@@ -53,10 +120,14 @@ def save_credentials(credentials: dict) -> None:
     # Merge new credentials
     existing.update(credentials)
 
-    # Save
+    # Save to file (always, for backward compatibility)
     CREDENTIALS_FILE.write_text(json.dumps(existing, indent=2))
     os.chmod(CREDENTIALS_FILE, 0o600)  # Restrict permissions
     print(f"  Credentials saved to {CREDENTIALS_FILE}")
+
+    # Save to SSM Parameter Store (for Medplum integration)
+    stage = settings.environment
+    save_credentials_to_ssm(credentials, stage)
 
 
 def seed_sense_loop() -> None:

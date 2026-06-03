@@ -33,7 +33,7 @@ export default $config({
       home: "aws",
       providers: {
         aws: {
-          region: "us-east-1",
+          region: "us-west-2",
         },
         random: true,
       },
@@ -308,7 +308,7 @@ export default $config({
         CORS_ORIGINS: JSON.stringify(
           isProduction
             ? ["https://app.senseloop.health", "https://dashboard.senseloop.health", "https://dashboard.wearables.senseloop.health"]
-            : ["https://app.staging.senseloop.health", "https://dashboard.wearables.staging.sf-coder.com", "http://localhost:3000"]
+            : ["https://app.staging.senselooplabs.com", "https://dashboard.wearables.staging.senselooplabs.com", "http://localhost:3000"]
         ),
       },
       health: {
@@ -329,7 +329,7 @@ export default $config({
       loadBalancer: {
         domain: isProduction
           ? "wearables.senseloop.health"
-          : "wearables.staging.sf-coder.com",
+          : "wearables.staging.senselooplabs.com",
         rules: [{ listen: "443/https", forward: "8000/http" }],
       },
       logging: {
@@ -393,7 +393,7 @@ export default $config({
 
     const frontendDomain = isProduction
       ? "dashboard.wearables.senseloop.health"
-      : "dashboard.wearables.staging.sf-coder.com";
+      : "dashboard.wearables.staging.senselooplabs.com";
 
     let frontendUrl: string | undefined;
 
@@ -406,7 +406,7 @@ export default $config({
           context: "../frontend",
           dockerfile: "Dockerfile",
           args: {
-            VITE_API_URL: `https://${isProduction ? "wearables.senseloop.health" : "wearables.staging.sf-coder.com"}`,
+            VITE_API_URL: `https://${isProduction ? "wearables.senseloop.health" : "wearables.staging.senselooplabs.com"}`,
           },
         },
         // No container health check - rely on ALB health check only
