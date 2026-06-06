@@ -126,7 +126,8 @@ def save_credentials(credentials: dict) -> None:
     print(f"  Credentials saved to {CREDENTIALS_FILE}")
 
     # Save to SSM Parameter Store (for Medplum integration)
-    stage = settings.environment
+    # Use .value to get the string value from the enum (e.g., "staging" not "EnvironmentType.STAGING")
+    stage = settings.environment.value if hasattr(settings.environment, 'value') else str(settings.environment)
     save_credentials_to_ssm(credentials, stage)
 
 

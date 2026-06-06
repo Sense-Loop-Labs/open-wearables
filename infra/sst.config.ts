@@ -303,6 +303,13 @@ export default $config({
         dockerfile: "Dockerfile",
       },
       command: ["scripts/start/app.sh"],
+      // Allow seed_sense_loop.py to write credentials to SSM for Medplum integration
+      permissions: [
+        {
+          actions: ["ssm:PutParameter", "ssm:AddTagsToResource"],
+          resources: [`arn:aws:ssm:us-west-2:*:parameter/sense-loop/${stage}/open-wearables/*`],
+        },
+      ],
       environment: {
         ...sharedEnv,
         CORS_ORIGINS: JSON.stringify(
