@@ -1,7 +1,7 @@
 """add_value_set_tables
 
 Revision ID: dc73cceb7f66
-Revises: f9668b293762
+Revises: 957da397ab9e
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'dc73cceb7f66'
-down_revision: Union[str, None] = 'f9668b293762'
+down_revision: Union[str, None] = '957da397ab9e'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

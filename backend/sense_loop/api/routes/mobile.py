@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.database import DbSession
 from sense_loop.schemas.mobile import (
     ActivitySummary,
+    BloodPressureSummary,
     CarePlanResponse,
     DashboardSummaryResponse,
     HeartRateSummary,
@@ -85,6 +86,21 @@ async def get_patient_from_token(
         )
 
     return patient
+
+
+def _get_bp_status(systolic: int, diastolic: int) -> str:
+    """Determine blood pressure status based on AHA guidelines."""
+    # Normal: systolic < 120 AND diastolic < 80
+    # Elevated: systolic 120-129 AND diastolic < 80
+    # High (Stage 1): systolic 130-139 OR diastolic 80-89
+    # High (Stage 2): systolic >= 140 OR diastolic >= 90
+    if systolic >= 140 or diastolic >= 90:
+        return "high"
+    elif systolic >= 130 or diastolic >= 80:
+        return "elevated"
+    elif systolic >= 120:
+        return "elevated"
+    return "normal"
 
 
 def _get_vital_status(value: float, vital_type: str) -> str:
@@ -174,46 +190,101 @@ async def get_summary(
     weight = None
     ow_user_id = patient.ow_user_id
     if ow_user_id:
-        from app.models import DataSource
-        from app.models.data_point_series import DataPointSeries
-        from app.models.series_type_definition import SeriesTypeDefinition
+        try:
+            from app.models import DataSource
+            from app.models.data_point_series import DataPointSeries
+            from app.models.series_type_definition import SeriesTypeDefinition
 
-        # Get latest weight
-        weight_stmt = (
-            select(DataPointSeries)
-            .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
-            .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
-            .where(
-                DataSource.user_id == ow_user_id,
-                SeriesTypeDefinition.code.in_(["weight", "body_mass"]),
+            # Get latest weight
+            weight_stmt = (
+                select(DataPointSeries)
+                .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+                .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
+                .where(
+                    DataSource.user_id == ow_user_id,
+                    SeriesTypeDefinition.code.in_(["weight", "body_mass"]),
+                )
+                .order_by(DataPointSeries.recorded_at.desc())
+                .limit(2)  # Get last 2 to calculate change
             )
-            .order_by(DataPointSeries.recorded_at.desc())
-            .limit(2)  # Get last 2 to calculate change
-        )
-        weight_records = db.execute(weight_stmt).scalars().all()
+            weight_records = db.execute(weight_stmt).scalars().all()
 
-        if weight_records:
-            latest = weight_records[0]
-            # Convert kg to lbs (1 kg = 2.20462 lbs)
-            weight_lbs = float(latest.value) * 2.20462
+            if weight_records:
+                latest = weight_records[0]
+                # Convert kg to lbs (1 kg = 2.20462 lbs)
+                weight_lbs = float(latest.value) * 2.20462
 
-            # Calculate change from previous if available
-            change = None
-            if len(weight_records) > 1:
-                previous = weight_records[1]
-                previous_lbs = float(previous.value) * 2.20462
-                change = round(weight_lbs - previous_lbs, 1)
+                # Calculate change from previous if available
+                change = None
+                if len(weight_records) > 1:
+                    previous = weight_records[1]
+                    previous_lbs = float(previous.value) * 2.20462
+                    change = round(weight_lbs - previous_lbs, 1)
 
-            weight = WeightSummary(
-                last_reading=latest.recorded_at,
-                value_lbs=round(weight_lbs, 1),
-                change_from_previous=change,
+                weight = WeightSummary(
+                    last_reading=latest.recorded_at,
+                    value_lbs=round(weight_lbs, 1),
+                    change_from_previous=change,
+                )
+        except Exception as e:
+            import logging
+            logging.error(f"Error fetching weight: {e}")
+
+    # Blood Pressure - query systolic and diastolic from data_point_series
+    blood_pressure = None
+    if ow_user_id:
+        try:
+            from app.models import DataSource
+            from app.models.data_point_series import DataPointSeries
+            from app.models.series_type_definition import SeriesTypeDefinition
+
+            # Get latest systolic reading
+            systolic_stmt = (
+                select(DataPointSeries)
+                .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+                .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
+                .where(
+                    DataSource.user_id == ow_user_id,
+                    SeriesTypeDefinition.code == "blood_pressure_systolic",
+                )
+                .order_by(DataPointSeries.recorded_at.desc())
+                .limit(1)
             )
+            systolic_record = db.execute(systolic_stmt).scalar_one_or_none()
+
+            # Get latest diastolic reading
+            diastolic_stmt = (
+                select(DataPointSeries)
+                .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+                .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
+                .where(
+                    DataSource.user_id == ow_user_id,
+                    SeriesTypeDefinition.code == "blood_pressure_diastolic",
+                )
+                .order_by(DataPointSeries.recorded_at.desc())
+                .limit(1)
+            )
+            diastolic_record = db.execute(diastolic_stmt).scalar_one_or_none()
+
+            if systolic_record and diastolic_record:
+                systolic = int(systolic_record.value)
+                diastolic = int(diastolic_record.value)
+                # Use the more recent timestamp
+                last_reading = max(systolic_record.recorded_at, diastolic_record.recorded_at)
+                blood_pressure = BloodPressureSummary(
+                    last_reading=last_reading,
+                    systolic=systolic,
+                    diastolic=diastolic,
+                    status=_get_bp_status(systolic, diastolic),
+                )
+        except Exception as e:
+            import logging
+            logging.error(f"Error fetching blood pressure: {e}")
 
     vitals = VitalsSummary(
         heart_rate=heart_rate,
         temperature=temperature,
-        blood_pressure=None,  # TODO: Add when we have BP data
+        blood_pressure=blood_pressure,
         weight=weight,
     )
 
