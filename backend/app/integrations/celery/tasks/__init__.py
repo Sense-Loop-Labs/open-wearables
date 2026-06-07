@@ -48,6 +48,9 @@ from .medplum_tasks import (
     send_vitals_to_medplum,
     send_workout_to_medplum,
 )
+
+# SENSE-LOOP: Native alert engine integration
+from .sense_loop_tasks import process_vitals_for_sense_loop
 from .periodic_sync_task import sync_all_users
 from .process_aws_upload_task import process_aws_upload
 from .process_sdk_upload_task import process_sdk_upload
@@ -98,4 +101,6 @@ __all__ = [
     "send_workout_to_medplum",
     "send_sleep_to_medplum",
     "send_sleep_batch_to_medplum",
+    # Sense Loop native alert engine
+    "process_vitals_for_sense_loop",
 ]

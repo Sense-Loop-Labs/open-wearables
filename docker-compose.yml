@@ -1,36 +1,39 @@
 services:
   db:
     image: postgres:18
-    container_name: postgres__open-wearables
+    container_name: postgres__sense-loop-labs
     environment:
-      POSTGRES_DB: open-wearables
-      POSTGRES_USER: open-wearables
-      POSTGRES_PASSWORD: open-wearables
+      POSTGRES_DB: sense-loop-labs
+      POSTGRES_USER: sense-loop-labs
+      POSTGRES_PASSWORD: sense-loop-labs
     ports:
-      - "5433:5432"  # Use 5433 to avoid conflict with sense-loop-fhir postgres
+      - "5435:5432"  # Use 5435 to avoid conflict with other instances
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U open-wearables -d open-wearables"]
+      test: ["CMD-SHELL", "pg_isready -U sense-loop-labs -d sense-loop-labs"]
       interval: 5s
       timeout: 5s
       retries: 5
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - postgres_data_labs:/var/lib/postgresql
 
   app:
     build:
         context: ./backend
         dockerfile: Dockerfile
-    container_name: backend__open-wearables
-    image: open-wearables-platform:latest
+    container_name: backend__sense-loop-labs
+    image: sense-loop-labs-platform:latest
     pull_policy: never
     command: scripts/start/app.sh
     env_file:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
+      - DB_NAME=sense-loop-labs
+      - DB_USER=sense-loop-labs
+      - DB_PASSWORD=sense-loop-labs
+      - REDIS_HOST=redis__sense-loop-labs
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -41,6 +44,9 @@ services:
         - action: sync
           path: ./backend/app
           target: /root_project/app
+        - action: sync
+          path: ./backend/sense_loop
+          target: /root_project/sense_loop
         - action: sync+restart
           path: ./backend/migrations
           target: /root_project/migrations
@@ -58,15 +64,18 @@ services:
     restart: on-failure
 
   celery-worker:
-    container_name: celery-worker__open-wearables
-    image: open-wearables-platform:latest
+    container_name: celery-worker__sense-loop-labs
+    image: sense-loop-labs-platform:latest
     pull_policy: never
     command: scripts/start/worker.sh
     env_file:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
+      - DB_NAME=sense-loop-labs
+      - DB_USER=sense-loop-labs
+      - DB_PASSWORD=sense-loop-labs
+      - REDIS_HOST=redis__sense-loop-labs
     depends_on:
       - redis
       - db
@@ -76,20 +85,26 @@ services:
         - action: sync+restart
           path: ./backend/app
           target: /root_project/app
+        - action: sync+restart
+          path: ./backend/sense_loop
+          target: /root_project/sense_loop
         - action: sync
           path: ./backend/scripts
           target: /root_project/scripts
 
   celery-beat:
-    container_name: celery-beat__open-wearables
-    image: open-wearables-platform:latest
+    container_name: celery-beat__sense-loop-labs
+    image: sense-loop-labs-platform:latest
     pull_policy: never
     command: scripts/start/beat.sh
     env_file:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
+      - DB_NAME=sense-loop-labs
+      - DB_USER=sense-loop-labs
+      - DB_PASSWORD=sense-loop-labs
+      - REDIS_HOST=redis__sense-loop-labs
     depends_on:
       - redis
       - db
@@ -99,22 +114,28 @@ services:
         - action: sync+restart
           path: ./backend/app
           target: /root_project/app
+        - action: sync+restart
+          path: ./backend/sense_loop
+          target: /root_project/sense_loop
         - action: sync
           path: ./backend/scripts
           target: /root_project/scripts
 
   flower:
-    container_name: flower__open-wearables
-    image: open-wearables-platform:latest
+    container_name: flower__sense-loop-labs
+    image: sense-loop-labs-platform:latest
     pull_policy: never
     command: scripts/start/flower.sh
     env_file:
       - ./backend/config/.env
     environment:
       - DB_HOST=db
-      - REDIS_HOST=redis__open-wearables  # Use container name to avoid DNS conflict with sense-loop-fhir
+      - DB_NAME=sense-loop-labs
+      - DB_USER=sense-loop-labs
+      - DB_PASSWORD=sense-loop-labs
+      - REDIS_HOST=redis__sense-loop-labs
     ports:
-      - 5555:5555
+      - 5556:5555
     depends_on:
       - redis
       - db
@@ -128,15 +149,15 @@ services:
             - .venv/
 
   redis:
-    container_name: redis__open-wearables
+    container_name: redis__sense-loop-labs
     image: redis:8
     ports:
-      - "6380:6379"  # Use 6380 to avoid conflict with sense-loop-fhir redis
+      - "6381:6379"  # Use 6381 to avoid conflict with other instances
     volumes:
-      - redis_data:/var/lib/redis/data
+      - redis_data_labs:/var/lib/redis/data
 
   svix-server:
-    container_name: svix-server__open-wearables
+    container_name: svix-server__sense-loop-labs
     image: svix/svix-server:v1
     entrypoint:
       - sh
@@ -150,12 +171,12 @@ services:
     env_file:
       - ./backend/config/.env
     environment:
-      SVIX_DB_DSN: "postgresql://${DB_USER:-open-wearables}:${DB_PASSWORD:-open-wearables}@${DB_HOST:-db}:${DB_PORT:-5432}/svix"
+      SVIX_DB_DSN: "postgresql://sense-loop-labs:sense-loop-labs@db:5432/svix"
       SVIX_QUEUE_TYPE: "redis"
-      SVIX_REDIS_DSN: "redis://redis__open-wearables:6379/1"
+      SVIX_REDIS_DSN: "redis://redis__sense-loop-labs:6379/1"
       SVIX_CACHE_TYPE: "redis"
     ports:
-      - "8071:8071"
+      - "8072:8071"
     depends_on:
       db:
         condition: service_healthy
@@ -175,11 +196,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    container_name: frontend__open-wearables
-    image: open-wearables-frontend:dev
+    container_name: frontend__sense-loop-labs
+    image: sense-loop-labs-frontend:dev
     pull_policy: never
     ports:
-      - "3000:3000"
+      - "3002:3000"  # Use 3002 to avoid conflict with other instances
     depends_on:
       - app
     develop:
@@ -199,11 +220,9 @@ services:
     restart: on-failure
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_data_labs:
+  redis_data_labs:
 
-# Sense Loop Addition: External network for inter-service communication with Medplum
 networks:
   default:
-    name: sense-loop
-    external: true
+    name: sense-loop-labs

@@ -28,6 +28,7 @@ dependencies = [
     "svix>=1.90.0",
     "numpy>=2.4.4",
     "faker>=40.13.0",
+    "passlib>=1.7.4",  # Sense Loop: PBKDF2 password hashing
 ]
 
 [dependency-groups]
@@ -50,7 +51,7 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = 'py313'
-exclude = ["README.md", ".python-version", "LICENSE", "app/models/"]
+exclude = ["README.md", ".python-version", "LICENSE", "app/models/", "sense_loop/models/"]
 
 [tool.ruff.lint]
 select = [
@@ -85,7 +86,7 @@ ignore = [
 known-third-party = ["celery"]
 
 [tool.ty.src]
-exclude = ["migrations/", "app/models/", "tests/", "README.md", ".python-version", "LICENSE"]
+exclude = ["migrations/", "app/models/", "sense_loop/models/", "tests/", "README.md", ".python-version", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

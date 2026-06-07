@@ -71,4 +71,15 @@ v1_router.include_router(
 )
 v1_router.include_router(deprecated_webhooks_router, tags=["System: Provider Webhooks (Deprecated)"], deprecated=True)
 
+# --- Sense Loop Extension (conditional) ---
+from app.config import settings
+
+if settings.sense_loop_enabled:
+    try:
+        from sense_loop.api import sl_router
+        v1_router.include_router(sl_router)
+    except ImportError:
+        import logging
+        logging.warning("Sense Loop enabled but module not found")
+
 __all__ = ["v1_router"]

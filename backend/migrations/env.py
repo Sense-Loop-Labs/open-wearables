@@ -6,6 +6,16 @@ from sqlalchemy import engine_from_config, pool
 from app.config import settings
 from app.database import BaseDbModel
 
+# Import all OW models to ensure they're registered
+from app import models  # noqa: F401
+
+# Import Sense Loop models if enabled
+if settings.sense_loop_enabled:
+    try:
+        from sense_loop import models as sl_models  # noqa: F401
+    except ImportError:
+        pass
+
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.db_uri)
 

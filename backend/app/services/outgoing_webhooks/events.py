@@ -564,6 +564,36 @@ def flush_medplum_sleep_batch(
     )
 
 
+def _dispatch_sense_loop(
+    *,
+    user_id: UUID,
+    series_type: str,
+    samples: list[dict[str, Any]],
+    provider: str | None = None,
+) -> None:
+    """Dispatch timeseries data to Sense Loop for alert evaluation.
+
+    Silently skips if Sense Loop extension is not enabled.
+    """
+    if not settings.sense_loop_enabled:
+        return
+
+    if not samples:
+        return
+
+    try:
+        from app.integrations.celery.tasks.sense_loop_tasks import process_vitals_for_sense_loop
+
+        process_vitals_for_sense_loop.delay(
+            user_id=str(user_id),
+            series_type=series_type,
+            samples=samples,
+            provider=provider,
+        )
+    except Exception:
+        logger.warning("Could not enqueue Sense Loop vitals event for %s", series_type, exc_info=True)
+
+
 def on_timeseries_batch_saved(
     *,
     user_id: UUID,
@@ -701,6 +731,15 @@ def on_timeseries_batch_saved(
                     source_device=source_device,
                     medplum_patient_id=medplum_patient_id,
                 )
+
+    # Dispatch to Sense Loop for alert evaluation
+    # SL handles its own vital type mapping and patient lookup
+    _dispatch_sense_loop(
+        user_id=user_id,
+        series_type=series_type,
+        samples=samples or [],
+        provider=provider,
+    )
 
 
 def on_connection_created(

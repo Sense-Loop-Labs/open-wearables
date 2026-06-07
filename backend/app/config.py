@@ -218,6 +218,9 @@ class Settings(BaseSettings):
     hr_active_energy_threshold_kcal: float = 40.0  # Active if > 40 kcal burned in 10 min window
     hr_post_workout_recovery_minutes: int = 30  # Recovery period after workout ends
 
+    # Sense Loop Extension Settings
+    sense_loop_enabled: bool = False  # Enable Sense Loop clinical extension
+
     @model_validator(mode="after")
     def derive_svix_jwt_secret(self) -> "Settings":
         if self.svix_jwt_secret is None or self.svix_jwt_secret.get_secret_value() == "":

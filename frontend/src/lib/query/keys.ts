@@ -1,4 +1,5 @@
 import type { HealthDataParams, UserQueryParams } from '../api/types';
+import type { AlertQueryParams, PatientQueryParams } from '../api/types/sense-loop';
 
 export const queryKeys = {
   auth: {
@@ -175,5 +176,75 @@ export const queryKeys = {
     messages: () => [...queryKeys.webhooks.all, 'messages'] as const,
     attempts: (id: string) =>
       [...queryKeys.webhooks.detail(id), 'attempts'] as const,
+  },
+
+  // =========================================================================
+  // Sense Loop (Clinical Dashboard)
+  // =========================================================================
+
+  sl: {
+    // Auth
+    auth: {
+      all: ['sl', 'auth'] as const,
+      session: () => [...queryKeys.sl.auth.all, 'session'] as const,
+      me: () => [...queryKeys.sl.auth.all, 'me'] as const,
+    },
+
+    // Dashboard
+    dashboard: {
+      all: ['sl', 'dashboard'] as const,
+      overview: (orgId?: string) =>
+        [...queryKeys.sl.dashboard.all, 'overview', orgId] as const,
+      criticalPatients: (orgId?: string) =>
+        [...queryKeys.sl.dashboard.all, 'critical', orgId] as const,
+      recentAlerts: (orgId?: string) =>
+        [...queryKeys.sl.dashboard.all, 'recentAlerts', orgId] as const,
+      alertsByDay: (orgId?: string, days?: number) =>
+        [...queryKeys.sl.dashboard.all, 'alertsByDay', orgId, days] as const,
+    },
+
+    // Patients
+    patients: {
+      all: ['sl', 'patients'] as const,
+      lists: () => [...queryKeys.sl.patients.all, 'list'] as const,
+      list: (params?: PatientQueryParams) =>
+        [...queryKeys.sl.patients.lists(), params] as const,
+      details: () => [...queryKeys.sl.patients.all, 'detail'] as const,
+      detail: (id: string) => [...queryKeys.sl.patients.details(), id] as const,
+    },
+
+    // Alerts
+    alerts: {
+      all: ['sl', 'alerts'] as const,
+      lists: () => [...queryKeys.sl.alerts.all, 'list'] as const,
+      list: (params?: AlertQueryParams) =>
+        [...queryKeys.sl.alerts.lists(), params] as const,
+      details: () => [...queryKeys.sl.alerts.all, 'detail'] as const,
+      detail: (id: string) => [...queryKeys.sl.alerts.details(), id] as const,
+      stats: (orgId?: string) =>
+        [...queryKeys.sl.alerts.all, 'stats', orgId] as const,
+    },
+
+    // Clinicians
+    clinicians: {
+      all: ['sl', 'clinicians'] as const,
+      lists: () => [...queryKeys.sl.clinicians.all, 'list'] as const,
+      list: (orgId?: string) =>
+        [...queryKeys.sl.clinicians.lists(), orgId] as const,
+      details: () => [...queryKeys.sl.clinicians.all, 'detail'] as const,
+      detail: (id: string) =>
+        [...queryKeys.sl.clinicians.details(), id] as const,
+      roles: () => [...queryKeys.sl.clinicians.all, 'roles'] as const,
+    },
+
+    // Organizations
+    organizations: {
+      all: ['sl', 'organizations'] as const,
+      lists: () => [...queryKeys.sl.organizations.all, 'list'] as const,
+      list: () => [...queryKeys.sl.organizations.lists()] as const,
+      details: () => [...queryKeys.sl.organizations.all, 'detail'] as const,
+      detail: (id: string) =>
+        [...queryKeys.sl.organizations.details(), id] as const,
+    },
   },
 } as const;
