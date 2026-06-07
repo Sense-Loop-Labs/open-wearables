@@ -26,6 +26,7 @@ from sense_loop.schemas.mobile import (
     TodayActivity,
     VitalsSummary,
     WeeklyActivityPoint,
+    WeightSummary,
 )
 from sense_loop.services import CarePlanService, PatientService, QuestionnaireService
 
@@ -169,11 +170,51 @@ async def get_summary(
             status=_get_vital_status(temp_value, "temperature"),
         )
 
+    # Weight - query from data_point_series
+    weight = None
+    ow_user_id = patient.ow_user_id
+    if ow_user_id:
+        from app.models import DataSource
+        from app.models.data_point_series import DataPointSeries
+        from app.models.series_type_definition import SeriesTypeDefinition
+
+        # Get latest weight
+        weight_stmt = (
+            select(DataPointSeries)
+            .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+            .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
+            .where(
+                DataSource.user_id == ow_user_id,
+                SeriesTypeDefinition.code.in_(["weight", "body_mass"]),
+            )
+            .order_by(DataPointSeries.recorded_at.desc())
+            .limit(2)  # Get last 2 to calculate change
+        )
+        weight_records = db.execute(weight_stmt).scalars().all()
+
+        if weight_records:
+            latest = weight_records[0]
+            # Convert kg to lbs (1 kg = 2.20462 lbs)
+            weight_lbs = float(latest.value) * 2.20462
+
+            # Calculate change from previous if available
+            change = None
+            if len(weight_records) > 1:
+                previous = weight_records[1]
+                previous_lbs = float(previous.value) * 2.20462
+                change = round(weight_lbs - previous_lbs, 1)
+
+            weight = WeightSummary(
+                last_reading=latest.recorded_at,
+                value_lbs=round(weight_lbs, 1),
+                change_from_previous=change,
+            )
+
     vitals = VitalsSummary(
         heart_rate=heart_rate,
         temperature=temperature,
         blood_pressure=None,  # TODO: Add when we have BP data
-        weight=None,  # TODO: Add when we have weight data
+        weight=weight,
     )
 
     # ==========================================================================
