@@ -351,41 +351,48 @@ async def get_summary(
                 trend=sleep_trend[-7:] if sleep_trend else [],
             )
 
-    # HRV
+    # HRV - query directly from data_point_series
     hrv = None
-    if summary and summary.latest_hrv is not None and summary.latest_hrv_at:
-        hrv_trend = []
-        if ow_user_id:
+    if ow_user_id:
+        try:
             hrv_stmt = (
                 select(DataPointSeries)
                 .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
                 .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
                 .where(
                     DataSource.user_id == ow_user_id,
-                    SeriesTypeDefinition.code.in_(["heart_rate_variability", "hrv"]),
+                    SeriesTypeDefinition.code.in_(["heart_rate_variability_sdnn", "heart_rate_variability", "hrv"]),
                     DataPointSeries.recorded_at >= seven_days_ago,
                 )
                 .order_by(DataPointSeries.recorded_at.desc())
             )
             hrv_data = db.execute(hrv_stmt).scalars().all()
 
-            from collections import defaultdict
-            daily_hrv = defaultdict(list)
-            for point in hrv_data:
-                date_str = point.recorded_at.strftime("%Y-%m-%d")
-                daily_hrv[date_str].append(float(point.value))
+            if hrv_data:
+                from collections import defaultdict
+                daily_hrv = defaultdict(list)
+                for point in hrv_data:
+                    date_str = point.recorded_at.strftime("%Y-%m-%d")
+                    daily_hrv[date_str].append(float(point.value))
 
-            hrv_trend = [
-                HRVTrendPoint(date=date, value_ms=int(sum(values) / len(values)))
-                for date, values in sorted(daily_hrv.items())
-            ]
+                hrv_trend = [
+                    HRVTrendPoint(date=date, value_ms=int(sum(values) / len(values)))
+                    for date, values in sorted(daily_hrv.items())
+                ]
 
-        hrv = HRVSummary(
-            last_reading=summary.latest_hrv_at,
-            average_ms=int(summary.latest_hrv),
-            status=_get_vital_status(summary.latest_hrv, "hrv"),
-            trend=hrv_trend[-7:] if hrv_trend else [],
-        )
+                # Use latest reading and calculate average
+                latest = hrv_data[0]
+                avg_hrv = sum(float(p.value) for p in hrv_data) / len(hrv_data)
+
+                hrv = HRVSummary(
+                    last_reading=latest.recorded_at,
+                    average_ms=int(avg_hrv),
+                    status=_get_vital_status(avg_hrv, "hrv"),
+                    trend=hrv_trend[-7:] if hrv_trend else [],
+                )
+        except Exception as e:
+            import logging
+            logging.error(f"Error fetching HRV: {e}")
 
     # Resting Heart Rate
     resting_hr = None

@@ -78,6 +78,7 @@ def _map_series_to_vital(series_type: str) -> str | None:
     mapping = {
         "heart_rate": "heart_rate",
         "heart_rate_variability": "hrv",
+        "heart_rate_variability_sdnn": "hrv",
         "spo2": "spo2",
         "blood_oxygen": "spo2",
         "oxygen_saturation": "spo2",  # HealthKit uses this
@@ -85,8 +86,9 @@ def _map_series_to_vital(series_type: str) -> str | None:
         "skin_temperature": "temperature",
         "body_temperature": "temperature",  # HealthKit uses this
         "respiratory_rate": "respiratory_rate",
-        "blood_pressure_systolic": "blood_pressure",
-        "blood_pressure_diastolic": "blood_pressure",
+        # Keep BP types separate for correct rule matching
+        "blood_pressure_systolic": "blood_pressure_systolic",
+        "blood_pressure_diastolic": "blood_pressure_diastolic",
     }
     return mapping.get(series_type)
 
