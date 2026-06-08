@@ -56,6 +56,8 @@ class SummaryService:
             "hrv": ("latest_hrv", "latest_hrv_at"),
             "heart_rate_variability": ("latest_hrv", "latest_hrv_at"),  # HealthKit code
             "respiratory_rate": ("latest_respiratory_rate", "latest_respiratory_rate_at"),
+            "blood_pressure_systolic": ("latest_blood_pressure_systolic", "latest_blood_pressure_at"),
+            "blood_pressure_diastolic": ("latest_blood_pressure_diastolic", "latest_blood_pressure_at"),
         }
 
         if vital_type in vital_map:

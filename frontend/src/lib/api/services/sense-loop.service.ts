@@ -12,6 +12,8 @@ import type {
   AlertResolveRequest,
   AlertsByDay,
   AlertStats,
+  ClinicalAction,
+  ClinicalActionCreate,
   CriticalPatient,
   DashboardOverview,
   ForgotPasswordRequest,
@@ -20,6 +22,7 @@ import type {
   OrganizationCreate,
   OrganizationUpdate,
   PaginatedAlerts,
+  PaginatedClinicalActions,
   PaginatedClinicians,
   PaginatedPatients,
   Patient,
@@ -272,6 +275,32 @@ export const slValueSetsService = {
   },
 };
 
+// ============================================================================
+// Clinical Actions
+// ============================================================================
+
+export const slClinicalActionsService = {
+  async getAll(
+    patientId: string,
+    params?: { page?: number; page_size?: number }
+  ): Promise<PaginatedClinicalActions> {
+    return slApiClient.request<PaginatedClinicalActions>(
+      `${SL_BASE}/patients/${patientId}/actions`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number>,
+      }
+    );
+  },
+
+  async create(patientId: string, data: ClinicalActionCreate): Promise<ClinicalAction> {
+    return slApiClient.post<ClinicalAction>(
+      `${SL_BASE}/patients/${patientId}/actions`,
+      data
+    );
+  },
+};
+
 // Combined export for convenience
 export const slService = {
   auth: slAuthService,
@@ -281,4 +310,5 @@ export const slService = {
   clinicians: slCliniciansService,
   organizations: slOrganizationsService,
   valueSets: slValueSetsService,
+  clinicalActions: slClinicalActionsService,
 };

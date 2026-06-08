@@ -40,6 +40,11 @@ from .practitioner import (
     AcceptInviteRequest,
 )
 from .errors import ErrorResponse
+from .clinical_action import (
+    ClinicalActionCreate,
+    ClinicalActionResponse,
+    ClinicalActionListResponse,
+)
 
 __all__ = [
     # Patient
@@ -77,4 +82,8 @@ __all__ = [
     "AcceptInviteRequest",
     # Errors
     "ErrorResponse",
+    # Clinical Action
+    "ClinicalActionCreate",
+    "ClinicalActionResponse",
+    "ClinicalActionListResponse",
 ]

@@ -103,6 +103,11 @@ def _process_sample(
     """Process a single vital sample for alert evaluation."""
     from sense_loop.services.alert_engine import AlertEngine
 
+    # Skip heart rate - it uses activity-aware analysis in hr_anomaly_service instead
+    # This prevents duplicate alerts from individual readings without activity context
+    if vital_type == "heart_rate":
+        return
+
     value = sample.get("value")
     timestamp = sample.get("timestamp")
 

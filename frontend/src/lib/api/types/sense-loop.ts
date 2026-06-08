@@ -161,6 +161,9 @@ export interface PatientSummary {
   latest_hrv_at: string | null;
   latest_respiratory_rate: number | null;
   latest_respiratory_rate_at: string | null;
+  latest_blood_pressure_systolic: number | null;
+  latest_blood_pressure_diastolic: number | null;
+  latest_blood_pressure_at: string | null;
   latest_recovery_score: number | null;
   latest_recovery_score_at: string | null;
   latest_readiness_score: number | null;
@@ -427,3 +430,36 @@ export interface ValueSet {
   organization_id: string | null;
   item_count: number;
 }
+
+// ============================================================================
+// Clinical Action
+// ============================================================================
+
+export type ClinicalActionType =
+  | 'phone'
+  | 'in-person'
+  | 'order'
+  | 'education'
+  | 'escalation'
+  | 'note';
+
+export interface ClinicalAction {
+  id: string;
+  patient_id: string;
+  organization_id: string;
+  practitioner_id: string;
+  action_type: ClinicalActionType;
+  category_display: string;
+  notes: string | null;
+  practitioner_name: string;
+  related_alert_ids: string[] | null;
+  created_at: string;
+}
+
+export interface ClinicalActionCreate {
+  action_type: ClinicalActionType;
+  notes?: string;
+  related_alert_ids?: string[];
+}
+
+export type PaginatedClinicalActions = PaginatedResponse<ClinicalAction>;

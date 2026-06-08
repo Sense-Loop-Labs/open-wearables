@@ -246,5 +246,13 @@ export const queryKeys = {
       detail: (id: string) =>
         [...queryKeys.sl.organizations.details(), id] as const,
     },
+
+    // Clinical Actions
+    clinicalActions: {
+      all: ['sl', 'clinicalActions'] as const,
+      lists: () => [...queryKeys.sl.clinicalActions.all, 'list'] as const,
+      list: (patientId: string, params?: { page?: number; page_size?: number }) =>
+        [...queryKeys.sl.clinicalActions.lists(), patientId, params] as const,
+    },
   },
 } as const;

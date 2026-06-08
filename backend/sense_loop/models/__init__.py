@@ -17,6 +17,7 @@ from .questionnaire import Questionnaire, QuestionnaireQuestion
 from .questionnaire_response import QuestionnaireResponse, QuestionnaireAnswer
 from .audit_log import AuditLog
 from .value_set import ValueSet, ValueSetItem
+from .clinical_action import ClinicalAction
 
 __all__ = [
     "Organization",
@@ -38,4 +39,5 @@ __all__ = [
     "AuditLog",
     "ValueSet",
     "ValueSetItem",
+    "ClinicalAction",
 ]

@@ -3,15 +3,17 @@
  * Wraps all authenticated /sl/* routes with auth guard and sidebar
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createFileRoute, Outlet, redirect, useNavigate } from '@tanstack/react-router';
 
 import { SlSidebar } from '@/components/sl/layout/sl-sidebar';
+import { SlHeader } from '@/components/sl/layout/sl-header';
 import { isSlAuthenticated } from '@/lib/auth/sl-session';
+import { useSlAlerts } from '@/hooks/api/use-sl-alerts';
+import '@/styles/sl-clinical.css';
 
 export const Route = createFileRoute('/sl/_sl-authenticated')({
   beforeLoad: () => {
-    // Skip auth check during SSR - client will handle authentication
     if (typeof window === 'undefined') {
       return;
     }
@@ -27,6 +29,11 @@ export const Route = createFileRoute('/sl/_sl-authenticated')({
 
 function SlAuthenticatedLayout() {
   const navigate = useNavigate();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Get active alert count for sidebar badge
+  const { data: alertsData } = useSlAlerts({ status: 'active', page_size: 1 });
+  const alertCount = alertsData?.total ?? 0;
 
   // Client-side auth check after hydration
   useEffect(() => {
@@ -41,11 +48,21 @@ function SlAuthenticatedLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-black">
-      <SlSidebar />
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+    <div className="sl-clinical flex min-h-screen bg-gray-50">
+      <SlSidebar
+        collapsed={sidebarCollapsed}
+        alertCount={alertCount}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+      <div
+        className="flex-1 flex flex-col transition-all duration-200"
+        style={{ marginLeft: sidebarCollapsed ? '64px' : '250px' }}
+      >
+        <SlHeader />
+        <main className="flex-1 px-8 pb-8">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

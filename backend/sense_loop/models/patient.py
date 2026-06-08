@@ -109,6 +109,11 @@ class Patient(BaseDbModel):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
+    clinical_actions: Mapped[list["ClinicalAction"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="desc(ClinicalAction.created_at)",
+    )
 
     @property
     def full_name(self) -> str:

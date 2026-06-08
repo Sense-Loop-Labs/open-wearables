@@ -5,136 +5,180 @@
 
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
-  Activity,
-  AlertTriangle,
   LayoutDashboard,
-  LogOut,
-  Settings,
   Users,
-  UserCog,
+  AlertTriangle,
+  Stethoscope,
   Building2,
+  PanelLeft,
+  Activity,
 } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useSlAuth } from '@/hooks/use-sl-auth';
+import { cn } from '@/lib/utils';
 import {
   getSlCurrentOrgId,
   getSlOrganizations,
   setSlCurrentOrg,
 } from '@/lib/auth/sl-session';
 
-interface NavItem {
-  label: string;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
+interface SlSidebarProps {
+  collapsed?: boolean;
+  alertCount?: number;
+  onToggleCollapse?: () => void;
 }
 
-const navItems: NavItem[] = [
-  { label: 'Dashboard', to: '/sl/dashboard', icon: LayoutDashboard },
-  { label: 'Patients', to: '/sl/patients', icon: Users },
-  { label: 'Alerts', to: '/sl/alerts', icon: AlertTriangle },
-  { label: 'Clinicians', to: '/sl/clinicians', icon: UserCog },
-  { label: 'Settings', to: '/sl/settings', icon: Settings },
+const navItems = [
+  {
+    label: 'Dashboard',
+    path: '/sl/dashboard',
+    icon: LayoutDashboard,
+  },
+  {
+    label: 'Patients',
+    path: '/sl/patients',
+    icon: Users,
+  },
+  {
+    label: 'Alerts',
+    path: '/sl/alerts',
+    icon: AlertTriangle,
+    hasBadge: true,
+  },
+  {
+    label: 'Clinicians',
+    path: '/sl/clinicians',
+    icon: Stethoscope,
+  },
 ];
 
-export function SlSidebar() {
-  const { logout, practitioner } = useSlAuth();
+export function SlSidebar({ collapsed = false, alertCount = 0, onToggleCollapse }: SlSidebarProps) {
   const router = useRouterState();
   const currentPath = router.location.pathname;
 
   const organizations = getSlOrganizations();
   const currentOrgId = getSlCurrentOrgId();
+  const currentOrg = organizations.find((o) => o.id === currentOrgId);
+  const hasMultipleOrgs = organizations.length > 1;
 
   const handleOrgChange = (orgId: string) => {
     setSlCurrentOrg(orgId);
-    // Force a page refresh to reload data for new org
     window.location.reload();
   };
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-zinc-800 bg-black">
-      {/* Logo */}
-      <div className="flex h-16 items-center gap-3 border-b border-zinc-800 px-6">
-        <Activity className="h-6 w-6 text-emerald-500" />
-        <span className="text-lg font-semibold text-white">Sense Loop</span>
+    <aside
+      className={cn(
+        'fixed left-0 top-0 bottom-0 bg-white border-r border-gray-200 flex flex-col z-40 transition-all duration-200',
+        collapsed ? 'w-16' : 'w-[250px]'
+      )}
+    >
+      {/* Logo / Brand */}
+      <div className={cn(
+        'flex items-center gap-3 p-4 border-b border-gray-100',
+        collapsed && 'justify-center'
+      )}>
+        <Activity className="w-6 h-6 text-blue-600 flex-shrink-0" />
+        {!collapsed && (
+          <>
+            <span className="font-semibold text-gray-900 flex-1">Sense Loop</span>
+            <button
+              onClick={onToggleCollapse}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              title="Collapse sidebar"
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
+          </>
+        )}
+        {collapsed && (
+          <button
+            onClick={onToggleCollapse}
+            className="absolute top-4 left-full ml-2 p-1.5 bg-white border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md shadow-sm transition-colors"
+            title="Expand sidebar"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Organization Selector */}
-      {organizations.length > 1 && (
-        <div className="border-b border-zinc-800 px-4 py-3">
-          <Select value={currentOrgId || ''} onValueChange={handleOrgChange}>
-            <SelectTrigger className="w-full bg-zinc-900 border-zinc-700">
-              <Building2 className="mr-2 h-4 w-4 text-zinc-400" />
-              <SelectValue placeholder="Select organization" />
-            </SelectTrigger>
-            <SelectContent>
-              {organizations.map((org) => (
-                <SelectItem key={org.id} value={org.id}>
-                  <div className="flex flex-col">
-                    <span>{org.name}</span>
-                    <span className="text-xs text-zinc-500">{org.role_display_name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {!collapsed && (
+        <div className="p-4 border-b border-gray-100">
+          {hasMultipleOrgs ? (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 uppercase tracking-wide mb-1">
+                <Building2 className="w-3 h-3" />
+                <span>Organization</span>
+              </div>
+              <select
+                value={currentOrgId || ''}
+                onChange={(e) => handleOrgChange(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
+              >
+                <option value="">Select organization</option>
+                {organizations.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : currentOrg ? (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 uppercase tracking-wide mb-1">
+                <Building2 className="w-3 h-3" />
+                <span>Organization</span>
+              </div>
+              <div className="text-sm font-medium text-gray-900">{currentOrg.name}</div>
+            </div>
+          ) : null}
         </div>
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 p-2 space-y-1">
         {navItems.map((item) => {
-          const isActive = currentPath === item.to || currentPath.startsWith(`${item.to}/`);
-          const Icon = item.icon;
+          const isActive =
+            currentPath === item.path ||
+            (item.path !== '/sl/dashboard' && currentPath.startsWith(item.path));
 
           return (
             <Link
-              key={item.to}
-              to={item.to}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              key={item.path}
+              to={item.path}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-zinc-800 text-white border-l-2 border-emerald-500'
-                  : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
-              }`}
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                collapsed && 'justify-center px-2'
+              )}
+              title={collapsed ? item.label : undefined}
             >
-              <Icon className={`h-5 w-5 ${isActive ? 'text-emerald-500' : ''}`} />
-              {item.label}
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && (
+                <>
+                  <span>{item.label}</span>
+                  {item.hasBadge && alertCount > 0 && (
+                    <span className="ml-auto px-2 py-0.5 text-xs font-semibold bg-red-500 text-white rounded-full">
+                      {alertCount}
+                    </span>
+                  )}
+                </>
+              )}
+              {collapsed && item.hasBadge && alertCount > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* User & Logout */}
-      <div className="border-t border-zinc-800 p-4">
-        {practitioner && (
-          <div className="mb-3 px-2">
-            <p className="text-sm font-medium text-white truncate">
-              {practitioner.fullName}
-            </p>
-            <p className="text-xs text-zinc-500 truncate">{practitioner.email}</p>
-            {practitioner.currentOrg && (
-              <p className="text-xs text-emerald-500 mt-1">
-                {practitioner.currentOrg.role_display_name}
-              </p>
-            )}
-          </div>
-        )}
-        <Button
-          variant="outline"
-          className="w-full justify-start gap-2 border-zinc-700 text-zinc-400 hover:text-white"
-          onClick={() => logout()}
-        >
-          <LogOut className="h-4 w-4" />
-          Sign out
-        </Button>
-      </div>
+      {/* Footer */}
+      {!collapsed && (
+        <div className="p-3 border-t border-gray-100">
+          <p className="text-xs text-gray-400">Sense Loop v1.0</p>
+        </div>
+      )}
     </aside>
   );
 }

@@ -5,7 +5,7 @@ SENSE-LOOP ADDITION: This entire module is a Sense Loop addition for clinical HR
 Handles:
 - Recording anomalies to the database
 - Calculating deviation from baseline
-- Dispatching to Medplum for clinical review
+- Creating Sense Loop alerts for clinical review
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.hr_analysis import HRAnomaly, HRBaseline
 from app.services.medplum.hr_processor import SustainedAnomaly
-from app.services.medplum.webhook import medplum_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,13 @@ class HRAnomalyService:
         context_data: dict[str, Any],
         medplum_patient_id: str | None = None,
     ) -> HRAnomaly:
-        """Store anomaly in database and dispatch to Medplum.
+        """Store anomaly in database and create Sense Loop alert.
 
         Args:
-            user_id: The user's UUID
+            user_id: The user's UUID (OW user_id)
             anomaly: The detected sustained anomaly
             context_data: Supporting context (minutes_since_workout, recent_steps, recent_energy)
-            medplum_patient_id: Optional Medplum Patient ID for FHIR integration
+            medplum_patient_id: Deprecated - no longer used
 
         Returns:
             The created HRAnomaly database record
@@ -89,12 +89,8 @@ class HRAnomalyService:
             anomaly.reason,
         )
 
-        # Dispatch to Medplum immediately
-        if medplum_webhook.is_enabled() and medplum_patient_id:
-            success = self._dispatch_to_medplum(record, medplum_patient_id)
-            if success:
-                record.sent_to_medplum_at = datetime.now(timezone.utc)
-                self.db.commit()
+        # Create Sense Loop alert
+        self._create_sl_alert(user_id, record, anomaly, context_data)
 
         return record
 
@@ -125,36 +121,107 @@ class HRAnomalyService:
 
         return "medium"
 
-    def _dispatch_to_medplum(self, record: HRAnomaly, medplum_patient_id: str) -> bool:
-        """Send anomaly to Medplum for clinical review."""
-        payload = {
-            "event_type": "hr.anomaly",
-            "user_id": str(record.user_id),
-            "medplum_patient_id": medplum_patient_id,
-            "timestamp": record.detected_at.isoformat(),
-            "data": {
-                "heart_rate": record.heart_rate,
-                "context": record.context,
-                "reason": record.reason,
-                "severity": record.severity,
+    def _create_sl_alert(
+        self,
+        user_id: UUID,
+        record: HRAnomaly,
+        anomaly: SustainedAnomaly,
+        context_data: dict[str, Any],
+    ) -> None:
+        """Create a Sense Loop alert for the HR anomaly.
+
+        This replaces the previous Medplum dispatch. Alerts are created directly
+        in the Sense Loop database for clinical review.
+        """
+        from sense_loop.models import Alert, Patient
+        from sense_loop.services.summary_service import SummaryService
+
+        # Find the SL Patient linked to this OW User
+        stmt = select(Patient).where(
+            Patient.ow_user_id == user_id,
+            Patient.is_active == True,  # noqa: E712
+        )
+        patient = self.db.execute(stmt).scalar_one_or_none()
+
+        if not patient:
+            logger.warning(
+                "No active SL patient found for user %s - skipping alert creation",
+                user_id,
+            )
+            return
+
+        # Map severity: hr_anomaly_service uses "high"/"medium", SL uses "critical"/"warning"
+        sl_severity = "critical" if record.severity == "high" else "warning"
+
+        # Build alert title based on reason
+        if "elevated" in anomaly.reason or "high" in anomaly.reason.lower():
+            title = "High Heart Rate Alert"
+            message = (
+                f"Patient's heart rate of {record.heart_rate} bpm has been elevated "
+                f"for a sustained period while at rest."
+            )
+        elif "low" in anomaly.reason.lower():
+            title = "Low Heart Rate Alert"
+            message = (
+                f"Patient's heart rate of {record.heart_rate} bpm has been low "
+                f"for a sustained period."
+            )
+        else:
+            title = "Heart Rate Anomaly Alert"
+            message = f"Sustained heart rate anomaly detected: {record.heart_rate} bpm. Reason: {anomaly.reason}"
+
+        # Add context to message
+        if record.baseline_resting_hr:
+            message += f" Baseline resting HR: {record.baseline_resting_hr} bpm."
+        if record.deviation_percent:
+            message += f" Deviation: {record.deviation_percent:.1f}%."
+        if context_data.get("minutes_since_workout"):
+            message += f" Minutes since last workout: {context_data['minutes_since_workout']}."
+
+        # Create the alert
+        alert = Alert(
+            id=uuid4(),
+            patient_id=patient.id,
+            organization_id=patient.organization_id,
+            title=title,
+            message=message,
+            severity=sl_severity,
+            category="vital_sign",
+            status="active",
+            triggered_at=record.detected_at,
+            days_post_surgery=patient.days_post_surgery,
+            patient_context="resting",  # Sustained anomalies only fire in resting context
+            vital_type="heart_rate",
+            observed_value=float(record.heart_rate),
+            threshold_breached="high_warning" if "elevated" in anomaly.reason else "low_warning",
+            data={
+                "anomaly_id": str(record.id),
+                "reason": anomaly.reason,
                 "baseline_resting_hr": record.baseline_resting_hr,
                 "deviation_percent": float(record.deviation_percent) if record.deviation_percent else None,
-                "minutes_since_workout": record.minutes_since_workout,
-                "recent_step_count": record.recent_step_count,
-                "recent_active_energy": float(record.recent_active_energy) if record.recent_active_energy else None,
+                "minutes_since_workout": context_data.get("minutes_since_workout"),
+                "recent_steps": context_data.get("recent_steps"),
+                "recent_energy": float(context_data.get("recent_energy", 0)) if context_data.get("recent_energy") else None,
+                "reading_count": anomaly.reading_count,
+                "avg_hr": anomaly.avg_hr,
+                "activity_aware": True,  # Flag that this used activity-aware detection
             },
-        }
+        )
 
-        try:
-            success = medplum_webhook.send_sync(payload)
-            if success:
-                logger.info("Sent HR anomaly to Medplum: %s", record.id)
-            else:
-                logger.error("Failed to send HR anomaly to Medplum: %s", record.id)
-            return success
-        except Exception as e:
-            logger.error("Error sending HR anomaly to Medplum: %s", e, exc_info=True)
-            return False
+        self.db.add(alert)
+        self.db.flush()
+
+        logger.info(
+            "Created SL alert %s for patient %s: %s (%d bpm)",
+            alert.id,
+            patient.id,
+            title,
+            record.heart_rate,
+        )
+
+        # Update patient summary alert counts
+        summary_service = SummaryService(self.db)
+        summary_service.update_alert_counts(patient.id)
 
     def update_medplum_ids(
         self,
