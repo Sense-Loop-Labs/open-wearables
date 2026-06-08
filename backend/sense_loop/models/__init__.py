@@ -19,6 +19,14 @@ from .audit_log import AuditLog
 from .value_set import ValueSet, ValueSetItem
 from .clinical_action import ClinicalAction
 
+# Cedar-based access control models
+from sense_loop.access.cedar.models import (
+    AccessPolicy,
+    RoleAccessPolicy,
+    PractitionerAccessPolicy,
+    BreakTheGlassAccess,
+)
+
 __all__ = [
     "Organization",
     "RoleDefinition",
@@ -40,4 +48,9 @@ __all__ = [
     "ValueSet",
     "ValueSetItem",
     "ClinicalAction",
+    # Cedar access control
+    "AccessPolicy",
+    "RoleAccessPolicy",
+    "PractitionerAccessPolicy",
+    "BreakTheGlassAccess",
 ]

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from .routes import auth, mobile, patients, alerts, clinicians, organizations, dashboard, value_sets, clinical_actions
+from .routes import auth, mobile, patients, alerts, clinicians, organizations, dashboard, value_sets, clinical_actions, break_glass
 
 sl_router = APIRouter(prefix="/sl", tags=["Sense Loop"])
 
@@ -20,5 +20,6 @@ sl_router.include_router(organizations.router, prefix="/organizations", tags=["S
 sl_router.include_router(dashboard.router, prefix="/dashboard", tags=["SL: Dashboard"])
 sl_router.include_router(value_sets.router, prefix="/value-sets", tags=["SL: Value Sets"])
 sl_router.include_router(clinical_actions.router, prefix="/patients", tags=["SL: Clinical Actions"])
+sl_router.include_router(break_glass.router, prefix="/break-glass", tags=["SL: Break-the-Glass"])
 
 __all__ = ["sl_router"]

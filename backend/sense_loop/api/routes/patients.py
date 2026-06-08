@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.database import DbSession
 from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
 from sense_loop.audit import AuditLogger, get_audit_context
+from sense_loop.config import sl_settings
 from sense_loop.schemas.patient import (
     PatientCreate,
     PatientListResponse,
@@ -89,10 +90,14 @@ async def list_patients(
     page_size: int = Query(20, ge=1, le=100),
 ):
     """List patients in an organization."""
-    # Check access
+    # Check access using parallel mode (evaluates both legacy and Cedar)
     engine = PolicyEngine(db)
-    if not engine.has_permission(
-        practitioner, Permission.MANAGE_PATIENTS, organization_id
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        organization_id,
+        action="read",
+        resource_type="patient",
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -133,8 +138,22 @@ async def list_patients(
 
     pages = (total + page_size - 1) // page_size
 
+    # Build response items
+    items = [_patient_to_response(p) for p in patients]
+
+    # Filter response fields based on Cedar policies (if enabled)
+    if sl_settings.use_cedar_auth:
+        items = engine.filter_response_fields(
+            [item.model_dump() for item in items],
+            practitioner,
+            "patient",
+            organization_id,
+        )
+        # Convert back to response models
+        items = [PatientResponse(**item) for item in items]
+
     return PatientListResponse(
-        items=[_patient_to_response(p) for p in patients],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -158,9 +177,16 @@ async def get_patient(
             detail="Patient not found",
         )
 
-    # Check access
+    # Check access using parallel mode
     engine = PolicyEngine(db)
-    if not engine.can_access_patient(practitioner, patient.organization_id):
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        patient.organization_id,
+        action="read",
+        resource_type="patient",
+        resource_id=patient_id,
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this patient",
@@ -179,7 +205,19 @@ async def get_patient(
         phi_fields_accessed=["first_name", "last_name", "date_of_birth", "email", "phone"],
     )
 
-    return _patient_to_response(patient)
+    response = _patient_to_response(patient)
+
+    # Filter response fields based on Cedar policies (if enabled)
+    if sl_settings.use_cedar_auth:
+        filtered = engine.filter_response_fields(
+            response.model_dump(),
+            practitioner,
+            "patient",
+            patient.organization_id,
+        )
+        return PatientResponse(**filtered)
+
+    return response
 
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)

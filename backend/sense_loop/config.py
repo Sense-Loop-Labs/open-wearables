@@ -61,6 +61,14 @@ class SenseLoopSettings(BaseSettings):
     default_temp_low_critical: float = 35.0
     default_temp_low_warning: float = 36.0
 
+    # Cedar Authorization Settings
+    # Use Cedar-based authorization (parallel mode runs both and logs discrepancies)
+    use_cedar_auth: bool = False
+    # Run Cedar in parallel with legacy RBAC and log decision differences
+    cedar_parallel_mode: bool = True
+    # Cache TTL for Cedar policy evaluations (seconds)
+    cedar_cache_ttl_seconds: int = 300
+
 
 @lru_cache
 def get_sl_settings() -> SenseLoopSettings:
