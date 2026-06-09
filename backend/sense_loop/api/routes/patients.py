@@ -3,6 +3,8 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.database import DbSession
 from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
@@ -20,10 +22,59 @@ from sense_loop.services import EnrollmentService, PatientService
 router = APIRouter()
 
 
-def _patient_to_response(patient) -> PatientResponse:
-    """Convert patient model to response schema."""
+def _get_latest_sleep_minutes(db: Session, ow_user_id: UUID | None) -> int | None:
+    """Get latest sleep duration from event_record table.
+
+    Queries the OW event_record table directly to get fresh sleep data,
+    rather than relying on the potentially stale PatientSummary cache.
+    """
+    if not ow_user_id:
+        return None
+
+    try:
+        from app.models import DataSource
+        from app.models.event_record import EventRecord
+        from app.models.event_record_detail import EventRecordDetail
+        from app.models.sleep_details import SleepDetails
+
+        # Query latest sleep record for this user
+        stmt = (
+            select(EventRecord, SleepDetails)
+            .join(DataSource, EventRecord.data_source_id == DataSource.id)
+            .join(EventRecordDetail, EventRecordDetail.record_id == EventRecord.id)
+            .join(SleepDetails, SleepDetails.record_id == EventRecordDetail.record_id)
+            .where(
+                DataSource.user_id == ow_user_id,
+                EventRecord.category == "sleep",
+            )
+            .order_by(EventRecord.end_datetime.desc())
+            .limit(1)
+        )
+        result = db.execute(stmt).first()
+
+        if result:
+            event, sleep_details = result
+            if sleep_details and sleep_details.sleep_total_duration_minutes:
+                return sleep_details.sleep_total_duration_minutes
+            elif event.duration_seconds:
+                return int(event.duration_seconds / 60)
+
+        return None
+    except Exception:
+        # If OW tables aren't available, fall back to None
+        return None
+
+
+def _patient_to_response(patient, db: Session) -> PatientResponse:
+    """Convert patient model to response schema.
+
+    Fetches latest sleep data directly from event_record table for freshness.
+    """
     summary = None
     if patient.summary:
+        # Get fresh sleep data from event_record table instead of stale PatientSummary
+        latest_sleep_minutes = _get_latest_sleep_minutes(db, patient.ow_user_id)
+
         summary = PatientSummaryResponse(
             latest_heart_rate=patient.summary.latest_heart_rate,
             latest_heart_rate_at=patient.summary.latest_heart_rate_at,
@@ -40,7 +91,7 @@ def _patient_to_response(patient) -> PatientResponse:
             latest_blood_pressure_at=patient.summary.latest_blood_pressure_at,
             today_steps=patient.summary.today_steps,
             today_active_minutes=patient.summary.today_active_minutes,
-            last_sleep_duration_minutes=patient.summary.last_sleep_duration_minutes,
+            last_sleep_duration_minutes=latest_sleep_minutes,
             active_alerts_count=patient.summary.active_alerts_count,
             active_critical_alerts_count=patient.summary.active_critical_alerts_count,
             overall_status=patient.summary.overall_status,
@@ -139,7 +190,7 @@ async def list_patients(
     pages = (total + page_size - 1) // page_size
 
     # Build response items
-    items = [_patient_to_response(p) for p in patients]
+    items = [_patient_to_response(p, db) for p in patients]
 
     # Filter response fields based on Cedar policies (if enabled)
     if sl_settings.use_cedar_auth:
@@ -205,7 +256,7 @@ async def get_patient(
         phi_fields_accessed=["first_name", "last_name", "date_of_birth", "email", "phone"],
     )
 
-    response = _patient_to_response(patient)
+    response = _patient_to_response(patient, db)
 
     # Filter response fields based on Cedar policies (if enabled)
     if sl_settings.use_cedar_auth:
@@ -263,7 +314,7 @@ async def create_patient(
     # Reload to get relationships
     patient = service.get_by_id(patient.id)
 
-    return _patient_to_response(patient)
+    return _patient_to_response(patient, db)
 
 
 @router.patch("/{patient_id}", response_model=PatientResponse)
@@ -317,7 +368,7 @@ async def update_patient(
 
     db.commit()
 
-    return _patient_to_response(patient)
+    return _patient_to_response(patient, db)
 
 
 @router.post("/{patient_id}/generate-activation-code")

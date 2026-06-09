@@ -103,25 +103,6 @@ class SummaryService:
 
         return summary
 
-    def update_sleep(
-        self,
-        patient_id: UUID,
-        duration_minutes: int,
-        score: float | None = None,
-        sleep_date: datetime | None = None,
-    ) -> PatientSummary:
-        """Update last night's sleep data."""
-        summary = self.get_or_create_summary(patient_id)
-
-        summary.last_sleep_duration_minutes = duration_minutes
-        summary.last_sleep_score = score
-        summary.last_sleep_date = sleep_date or datetime.utcnow()
-
-        summary.updated_at = datetime.utcnow()
-        self.db.flush()
-
-        return summary
-
     def update_recovery(
         self,
         patient_id: UUID,
