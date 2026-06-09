@@ -5,26 +5,26 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sl-brand)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer',
   {
     variants: {
       variant: {
         default:
-          'bg-white text-black hover:bg-zinc-200 border border-transparent',
+          'bg-[var(--sl-brand)] text-white hover:bg-[var(--sl-brand-dark)] border border-transparent',
         destructive:
-          'bg-red-500/10 text-red-400 border border-red-500/30 hover:border-red-500/50 hover:shadow-[0_0_15px_hsla(350,100%,55%,0.3)]',
+          'bg-red-600 text-white hover:bg-red-700 border border-transparent',
         'destructive-outline':
-          'border border-border/50 bg-background hover:bg-card hover:border-red-500/50 hover:text-red-400 hover:shadow-[0_0_10px_hsla(350,100%,55%,0.2)]',
+          'border border-red-300 bg-white text-red-600 hover:bg-red-50 hover:border-red-400',
         outline:
-          'border border-border/50 bg-background hover:bg-card hover:border-primary/50 hover:shadow-[0_0_10px_hsla(185,100%,50%,0.2)]',
+          'border border-[var(--sl-border)] bg-white text-[var(--sl-text-secondary)] hover:bg-[var(--sl-bg-hover)] hover:text-[var(--sl-text-primary)]',
         secondary:
-          'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700/50',
+          'bg-[var(--sl-bg-muted)] text-[var(--sl-text-secondary)] hover:bg-[var(--sl-bg-hover)] border border-[var(--sl-border)]',
         ghost:
-          'border border-transparent hover:border-border/50 hover:bg-card hover:text-foreground hover:shadow-[0_0_8px_hsla(185,100%,50%,0.15)]',
+          'border border-transparent text-[var(--sl-text-secondary)] hover:bg-[var(--sl-bg-hover)] hover:text-[var(--sl-text-primary)]',
         'ghost-faded':
-          'border border-transparent text-zinc-500 hover:border-border/50 hover:bg-card hover:text-zinc-300 hover:shadow-[0_0_8px_hsla(185,100%,50%,0.15)]',
-        link: 'text-primary underline-offset-4 hover:underline',
-        neon: 'bg-primary text-primary-foreground border border-border/50 hover:bg-primary-hover hover:shadow-[0_0_20px_hsla(185,100%,50%,0.4)] transition-all duration-300 ease-out active:scale-[0.98]',
+          'border border-transparent text-[var(--sl-text-muted)] hover:bg-[var(--sl-bg-hover)] hover:text-[var(--sl-text-secondary)]',
+        link: 'text-[var(--sl-brand)] underline-offset-4 hover:underline',
+        neon: 'bg-[var(--sl-brand)] text-white border border-transparent hover:bg-[var(--sl-brand-dark)] transition-all duration-300 ease-out active:scale-[0.98]',
       },
       size: {
         default: 'h-10 px-4 py-2',

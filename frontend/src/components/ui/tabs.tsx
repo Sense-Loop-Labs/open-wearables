@@ -10,15 +10,21 @@ const TabsContext = React.createContext<TabsContextValue | undefined>(
 );
 
 interface TabsProps {
-  value: string;
-  onValueChange: (value: string) => void;
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-export function Tabs({ value, onValueChange, children, className }: TabsProps) {
+export function Tabs({ value, defaultValue, onValueChange, children, className }: TabsProps) {
+  const [internalValue, setInternalValue] = React.useState(defaultValue || '');
+
+  const currentValue = value !== undefined ? value : internalValue;
+  const handleValueChange = onValueChange || setInternalValue;
+
   return (
-    <TabsContext.Provider value={{ value, onValueChange }}>
+    <TabsContext.Provider value={{ value: currentValue, onValueChange: handleValueChange }}>
       <div className={className}>{children}</div>
     </TabsContext.Provider>
   );
@@ -33,7 +39,7 @@ export function TabsList({ children, className }: TabsListProps) {
   return (
     <div
       role="tablist"
-      className={`inline-flex h-10 items-center justify-center rounded-md bg-zinc-900/50 p-1 text-zinc-500 ${className || ''}`}
+      className={`inline-flex h-10 items-center justify-center rounded-md bg-[var(--sl-bg-muted)] border border-[var(--sl-border)] p-1 text-[var(--sl-text-muted)] ${className || ''}`}
     >
       {children}
     </div>
@@ -62,10 +68,10 @@ export function TabsTrigger({ value, children, className }: TabsTriggerProps) {
       aria-selected={isActive}
       aria-controls={`panel-${value}`}
       onClick={() => context.onValueChange(value)}
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-zinc-950 transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sl-brand)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
         isActive
-          ? 'bg-zinc-800 text-white shadow-sm'
-          : 'text-zinc-400 hover:text-zinc-300'
+          ? 'bg-white text-[var(--sl-text-primary)] shadow-sm'
+          : 'text-[var(--sl-text-muted)] hover:text-[var(--sl-text-secondary)]'
       } ${className || ''}`}
     >
       {children}
@@ -95,7 +101,7 @@ export function TabsContent({ value, children, className }: TabsContentProps) {
       id={`panel-${value}`}
       aria-labelledby={`tab-${value}`}
       tabIndex={0}
-      className={`mt-6 ring-offset-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 ${className || ''}`}
+      className={`mt-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sl-brand)] focus-visible:ring-offset-2 ${className || ''}`}
     >
       {children}
     </div>

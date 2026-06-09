@@ -3,7 +3,7 @@
  * Clinical-themed patient management page
  */
 
-import { createFileRoute, Link, useSearch, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useSearch, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -157,15 +157,15 @@ function SlPatientsPage() {
                   const riskLevel = getRiskLevel(patient.days_post_surgery);
 
                   return (
-                    <tr key={patient.id}>
+                    <tr
+                      key={patient.id}
+                      onClick={() => navigate({ to: '/sl/patients/$patientId', params: { patientId: patient.id } })}
+                      className="cursor-pointer hover:bg-[var(--sl-bg-muted)]"
+                    >
                       <td>
-                        <Link
-                          to="/sl/patients/$patientId"
-                          params={{ patientId: patient.id }}
-                          className="font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-brand)]"
-                        >
+                        <span className="font-medium text-[var(--sl-text-primary)]">
                           {patient.full_name}
-                        </Link>
+                        </span>
                         {patient.email && (
                           <p className="text-xs text-[var(--sl-text-muted)]">{patient.email}</p>
                         )}

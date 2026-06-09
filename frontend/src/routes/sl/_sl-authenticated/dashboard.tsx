@@ -6,8 +6,6 @@
 import { useState, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import {
-  ChevronDown,
-  ChevronUp,
   AlertTriangle,
   XCircle,
   Activity,
@@ -321,8 +319,10 @@ function PatientRow({ patient, alerts, isExpanded, onToggle, onOpenModal }: Pati
   // Get the most recent action for the "Last Action" column
   const lastAction = actions[0];
 
-  const formatTimeAgo = (dateString: string) => {
+  const formatTimeAgo = (dateString: string | null | undefined) => {
+    if (!dateString) return '--';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '--';
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -430,12 +430,7 @@ function PatientRow({ patient, alerts, isExpanded, onToggle, onOpenModal }: Pati
         <td>
           <div className="flex items-center gap-2 text-sm text-[var(--sl-text-muted)]">
             <Clock className="w-4 h-4" />
-            <span>{formatTimeAgo(patient.updated_at)}</span>
-            {isExpanded ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
+            <span>{formatTimeAgo(summary?.last_data_received_at)}</span>
           </div>
         </td>
       </tr>

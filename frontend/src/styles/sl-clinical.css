@@ -1,6 +1,38 @@
 /* Sense Loop Clinical Dashboard Theme */
 
-/* CSS Variables */
+/* CSS Variables - defined at root so they work in portals (dialogs, etc.) */
+:root {
+  --sl-brand: #7c3aed;
+  --sl-brand-light: #8b5cf6;
+  --sl-brand-dark: #6d28d9;
+
+  --sl-bg-page: #f8fafc;
+  --sl-bg-card: #ffffff;
+  --sl-bg-hover: #f1f5f9;
+  --sl-bg-muted: #f8fafc;
+
+  --sl-border: #e2e8f0;
+  --sl-border-light: #f1f5f9;
+
+  --sl-text-primary: #0f172a;
+  --sl-text-secondary: #334155;
+  --sl-text-muted: #64748b;
+  --sl-text-subtle: #94a3b8;
+
+  --sl-risk-critical: #dc2626;
+  --sl-risk-critical-bg: #fef2f2;
+  --sl-risk-high: #ea580c;
+  --sl-risk-high-bg: #fff7ed;
+  --sl-risk-medium: #ca8a04;
+  --sl-risk-medium-bg: #fefce8;
+  --sl-risk-low: #16a34a;
+  --sl-risk-low-bg: #f0fdf4;
+
+  --sl-sidebar-width: 250px;
+  --sl-header-height: 60px;
+}
+
+/* Legacy support - keep variables on .sl-clinical for existing code */
 .sl-clinical {
   --sl-brand: #7c3aed;
   --sl-brand-light: #8b5cf6;
