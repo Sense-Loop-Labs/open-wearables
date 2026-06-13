@@ -20,11 +20,14 @@ from app.utils.config_utils import (
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).parent.parent / "config" / ".env"),
+        # Load .env first (Docker defaults), then .env.local (local overrides)
+        # .env.local is gitignored and only exists for local development
+        env_file=(
+            str(Path(__file__).parent.parent / "config" / ".env"),
+            str(Path(__file__).parent.parent / "config" / ".env.local"),
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
-        # default env_file solution search .env every time BaseSettings is instantiated
-        # dotenv search .env when module is imported, without usecwd it starts from the file it was called
     )
 
     # CORE SETTINGS
