@@ -38,9 +38,17 @@ import {
   useDischargePatient,
   useGenerateActivationCode,
   useSlPatient,
+  useSlPatientVitals,
   useUpdateSlPatient,
 } from '@/hooks/api/use-sl-patients';
-import type { Alert, Patient, PatientSummary, PatientUpdate } from '@/lib/api/types/sense-loop';
+import {
+  useInstructionTemplates,
+  usePatientPlans,
+  useAssignPatientPlan,
+  useCancelPatientPlan,
+} from '@/hooks/api/use-sl-instruction-templates';
+import type { Alert, Patient, PatientSummary, PatientUpdate, VitalReading, VitalType } from '@/lib/api/types/sense-loop';
+import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/sl/_sl-authenticated/patients/$patientId')({
@@ -165,7 +173,7 @@ function SlPatientDetailPage() {
         </TabsList>
 
         <TabsContent value="vitals">
-          <VitalsSection summary={patient.summary} />
+          <VitalsSection patientId={patient.id} summary={patient.summary} />
         </TabsContent>
 
         <TabsContent value="alerts">
@@ -308,41 +316,113 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-function VitalsSection({ summary }: { summary?: PatientSummary }) {
-  if (!summary) {
-    return (
-      <div className="sl-card">
-        <div className="sl-no-data">
-          <Activity className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
-          <p className="text-[var(--sl-text-muted)]">No observations recorded yet.</p>
-        </div>
-      </div>
-    );
-  }
+const VITAL_TYPE_LABELS: Record<VitalType, string> = {
+  heart_rate: 'Heart Rate',
+  blood_pressure: 'Blood Pressure',
+  spo2: 'SpO2',
+  temperature: 'Temperature',
+  respiratory_rate: 'Respiratory Rate',
+  hrv: 'HRV',
+};
 
-  // Helper to convert Celsius to Fahrenheit
-  const celsiusToFahrenheit = (celsius: number | null | undefined): number | null => {
-    if (celsius === null || celsius === undefined) return null;
-    // If value is already in Fahrenheit range (>50), assume it's already converted
-    if (celsius > 50) return Math.round(celsius * 10) / 10;
-    // Convert from Celsius to Fahrenheit and round to 1 decimal
-    return Math.round((celsius * 9/5 + 32) * 10) / 10;
+function VitalsSection({ patientId, summary }: { patientId: string; summary?: PatientSummary }) {
+  const [activeTab, setActiveTab] = useState<'all' | VitalType>('all');
+  const [page, setPage] = useState(1);
+
+  // Fetch vitals based on active tab
+  const vitalsParams = {
+    vital_type: activeTab === 'all' ? undefined : activeTab,
+    aggregate_hr: activeTab === 'all', // Aggregate HR in "all" view
+    page,
+    page_size: 50,
   };
 
-  // Create observation rows from summary data
-  const observations = [
-    { type: 'Heart Rate', value: summary.latest_heart_rate, unit: 'bpm', date: summary.latest_heart_rate_at },
-    { type: 'SpO2', value: summary.latest_spo2, unit: '%', date: summary.latest_spo2_at },
-    { type: 'Temperature', value: celsiusToFahrenheit(summary.latest_temperature), unit: '°F', date: summary.latest_temperature_at },
-    { type: 'Respiratory Rate', value: summary.latest_respiratory_rate, unit: '/min', date: summary.latest_respiratory_rate_at },
-    { type: 'HRV', value: summary.latest_hrv ? Math.round(summary.latest_hrv) : null, unit: 'ms', date: summary.latest_hrv_at },
-    { type: 'Blood Pressure', value: summary.latest_blood_pressure_systolic && summary.latest_blood_pressure_diastolic ? `${summary.latest_blood_pressure_systolic}/${summary.latest_blood_pressure_diastolic}` : null, unit: 'mmHg', date: summary.latest_blood_pressure_at },
-    { type: 'Steps (Today)', value: summary.today_steps, unit: '', date: null },
-    { type: 'Active Minutes (Today)', value: summary.today_active_minutes, unit: 'min', date: null },
-    { type: 'Sleep', value: summary.last_sleep_duration_minutes ? Math.round(summary.last_sleep_duration_minutes / 60 * 10) / 10 : null, unit: 'hrs', date: null },
-  ].filter(obs => obs.value !== null && obs.value !== undefined);
+  const { data: vitalsData, isLoading } = useSlPatientVitals(patientId, vitalsParams);
 
-  if (observations.length === 0) {
+  // Reset page when tab changes
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
+
+  const formatVitalValue = (reading: VitalReading): string => {
+    if (reading.vital_type === 'blood_pressure' && reading.value_secondary !== null) {
+      return `${reading.value}/${reading.value_secondary}`;
+    }
+    return String(reading.value);
+  };
+
+  const renderVitalsTable = (readings: VitalReading[]) => {
+    if (readings.length === 0) {
+      return (
+        <div className="sl-card">
+          <div className="sl-no-data">
+            <Activity className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
+            <p className="text-[var(--sl-text-muted)]">No readings recorded yet.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="sl-table-container">
+        <table className="sl-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Value</th>
+              <th>Date & Time</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {readings.map((reading, idx) => (
+              <tr key={idx}>
+                <td className="text-[var(--sl-text-primary)] font-medium">
+                  {VITAL_TYPE_LABELS[reading.vital_type]}
+                  {reading.is_aggregated && (
+                    <span className="ml-2 text-xs text-[var(--sl-text-muted)]">(hourly avg)</span>
+                  )}
+                </td>
+                <td>{formatVitalValue(reading)} {reading.unit}</td>
+                <td>{formatDateTime(reading.recorded_at)}</td>
+                <td className="text-[var(--sl-text-muted)] text-sm">{reading.source || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Pagination */}
+        {vitalsData && vitalsData.pages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <span className="text-sm text-[var(--sl-text-muted)]">
+              Page {vitalsData.page} of {vitalsData.pages} ({vitalsData.total} readings)
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(vitalsData.pages, p + 1))}
+                disabled={page === vitalsData.pages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // If no summary and no vitals data, show empty state
+  if (!summary && !vitalsData?.items?.length && !isLoading) {
     return (
       <div className="sl-card">
         <div className="sl-no-data">
@@ -354,31 +434,43 @@ function VitalsSection({ summary }: { summary?: PatientSummary }) {
   }
 
   return (
-    <div className="sl-table-container">
-      <table className="sl-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Value</th>
-            <th>Date & Time</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {observations.map((obs, idx) => (
-            <tr key={idx}>
-              <td className="text-[var(--sl-text-primary)] font-medium">{obs.type}</td>
-              <td>{obs.value} {obs.unit}</td>
-              <td>{obs.date ? formatDateTime(obs.date) : 'Today'}</td>
-              <td>
-                <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                  final
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {/* Sub-tabs for vital types */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'all'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          All
+        </button>
+        {(Object.keys(VITAL_TYPE_LABELS) as VitalType[]).map((vt) => (
+          <button
+            key={vt}
+            onClick={() => setActiveTab(vt)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              activeTab === vt
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            {VITAL_TYPE_LABELS[vt]}
+          </button>
+        ))}
+      </div>
+
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--sl-text-muted)]" />
+        </div>
+      )}
+
+      {/* Vitals table */}
+      {!isLoading && vitalsData && renderVitalsTable(vitalsData.items)}
     </div>
   );
 }
@@ -571,9 +663,23 @@ interface EditPatientDialogProps {
 }
 
 function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
+  const organizationId = getSlCurrentOrgId();
   const { mutate: updatePatient, isPending } = useUpdateSlPatient();
-  const [formData, setFormData] = useState<Partial<PatientUpdate>>({});
+  const assignPlan = useAssignPatientPlan();
+  const cancelPlan = useCancelPatientPlan();
+  const { data: templatesData, isLoading: templatesLoading } = useInstructionTemplates({
+    organization_id: organizationId || undefined,
+    status: 'active',
+    include_shared: true,
+  });
+  const { data: plansData } = usePatientPlans(patient.id, 'active');
+
+  const [formData, setFormData] = useState<Partial<PatientUpdate> & { instruction_template_id?: string }>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Get current active plan
+  const currentPlan = plansData?.items?.[0];
+  const currentTemplateId = currentPlan?.template_id || '';
 
   // Initialize form data when dialog opens
   useEffect(() => {
@@ -588,10 +694,11 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
         gender: patient.gender || '',
         primary_diagnosis: patient.primary_diagnosis || '',
         surgery_date: patient.surgery_date || '',
+        instruction_template_id: currentTemplateId,
       });
       setErrors({});
     }
-  }, [open, patient]);
+  }, [open, patient, currentTemplateId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -605,27 +712,62 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
       return;
     }
 
-    updatePatient(
-      {
-        id: patient.id,
-        data: {
-          first_name: formData.first_name?.trim(),
-          last_name: formData.last_name?.trim(),
-          email: formData.email?.trim() || undefined,
-          phone: formData.phone?.trim() || undefined,
-          mrn: formData.mrn?.trim() || undefined,
-          date_of_birth: formData.date_of_birth || undefined,
-          gender: formData.gender || undefined,
-          primary_diagnosis: formData.primary_diagnosis?.trim() || undefined,
-          surgery_date: formData.surgery_date || undefined,
-        },
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        },
+    try {
+      // Update patient info
+      await new Promise<void>((resolve, reject) => {
+        updatePatient(
+          {
+            id: patient.id,
+            data: {
+              first_name: formData.first_name?.trim(),
+              last_name: formData.last_name?.trim(),
+              email: formData.email?.trim() || undefined,
+              phone: formData.phone?.trim() || undefined,
+              mrn: formData.mrn?.trim() || undefined,
+              date_of_birth: formData.date_of_birth || undefined,
+              gender: formData.gender || undefined,
+              primary_diagnosis: formData.primary_diagnosis?.trim() || undefined,
+              surgery_date: formData.surgery_date || undefined,
+            },
+          },
+          {
+            onSuccess: () => resolve(),
+            onError: (error) => reject(error),
+          }
+        );
+      });
+
+      // Handle care plan changes
+      const newTemplateId = formData.instruction_template_id || '';
+      const planChanged = newTemplateId !== currentTemplateId;
+
+      if (planChanged) {
+        // Cancel current plan if exists
+        if (currentPlan) {
+          await cancelPlan.mutateAsync({
+            patientId: patient.id,
+            planId: currentPlan.id,
+            cancelPendingTasks: true,
+          });
+        }
+
+        // Assign new plan if selected
+        if (newTemplateId) {
+          await assignPlan.mutateAsync({
+            patientId: patient.id,
+            data: {
+              template_id: newTemplateId,
+              reference_type: patient.surgery_date ? 'surgery_date' : 'assignment_date',
+              generate_tasks: true,
+            },
+          });
+        }
       }
-    );
+
+      onClose();
+    } catch {
+      // Errors handled by hooks
+    }
   };
 
   return (
@@ -759,14 +901,40 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
                 />
               </div>
             </div>
+
+            {/* Care Plan */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-[var(--sl-text-muted)]">Care Plan</h4>
+              <div className="sl-form-group">
+                <label className="sl-form-label">Instruction Template</label>
+                <select
+                  value={formData.instruction_template_id || ''}
+                  onChange={(e) => setFormData({ ...formData, instruction_template_id: e.target.value })}
+                  className="sl-select w-full"
+                  disabled={templatesLoading}
+                >
+                  <option value="">{templatesLoading ? 'Loading...' : 'No care plan assigned'}</option>
+                  {templatesData?.items?.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.title}
+                    </option>
+                  ))}
+                </select>
+                {currentPlan && formData.instruction_template_id !== currentTemplateId && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Changing the care plan will cancel the current plan and its pending tasks.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending || assignPlan.isPending || cancelPlan.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending} className="bg-[var(--sl-brand)] hover:bg-[var(--sl-brand-dark)] text-white">
-              {isPending ? (
+            <Button type="submit" disabled={isPending || assignPlan.isPending || cancelPlan.isPending} className="bg-[var(--sl-brand)] hover:bg-[var(--sl-brand-dark)] text-white">
+              {isPending || assignPlan.isPending || cancelPlan.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving...

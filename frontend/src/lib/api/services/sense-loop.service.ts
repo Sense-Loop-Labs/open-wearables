@@ -53,6 +53,8 @@ import type {
   RoleDefinition,
   ValueSet,
   ValueSetItem,
+  VitalsHistoryResponse,
+  VitalsQueryParams,
 } from '../types/sense-loop';
 
 const SL_BASE = '/api/v1/sl';
@@ -165,6 +167,13 @@ export const slPatientsService = {
 
   async discharge(id: string): Promise<Patient> {
     return slApiClient.post<Patient>(`${SL_BASE}/patients/${id}/discharge`);
+  },
+
+  async getVitals(id: string, params?: VitalsQueryParams): Promise<VitalsHistoryResponse> {
+    return slApiClient.request<VitalsHistoryResponse>(`${SL_BASE}/patients/${id}/vitals`, {
+      method: 'GET',
+      params: params as Record<string, string | number | boolean>,
+    });
   },
 };
 

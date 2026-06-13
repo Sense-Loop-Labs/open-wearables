@@ -242,6 +242,44 @@ export interface PatientQueryParams {
 }
 
 // ============================================================================
+// Vitals History
+// ============================================================================
+
+export type VitalType =
+  | 'heart_rate'
+  | 'blood_pressure'
+  | 'spo2'
+  | 'temperature'
+  | 'respiratory_rate'
+  | 'hrv';
+
+export interface VitalReading {
+  vital_type: VitalType;
+  value: number;
+  value_secondary: number | null; // For BP diastolic
+  unit: string;
+  recorded_at: string;
+  source: string | null;
+  is_aggregated: boolean;
+}
+
+export interface VitalsHistoryResponse {
+  items: VitalReading[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  vital_type: VitalType | null;
+}
+
+export interface VitalsQueryParams {
+  vital_type?: VitalType;
+  aggregate_hr?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+// ============================================================================
 // Alert
 // ============================================================================
 

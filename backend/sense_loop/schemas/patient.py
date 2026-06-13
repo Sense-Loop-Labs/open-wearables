@@ -132,3 +132,26 @@ class PatientListResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+class VitalReading(BaseModel):
+    """A single vital reading."""
+
+    vital_type: str
+    value: float
+    value_secondary: float | None = None  # For BP diastolic
+    unit: str
+    recorded_at: datetime
+    source: str | None = None
+    is_aggregated: bool = False  # True for hourly HR averages
+
+
+class VitalsHistoryResponse(BaseModel):
+    """Historical vitals response with pagination."""
+
+    items: list[VitalReading]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    vital_type: str | None = None  # Filter applied, None = all

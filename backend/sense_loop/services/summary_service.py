@@ -63,9 +63,9 @@ class SummaryService:
         if vital_type in vital_map:
             value_field, timestamp_field = vital_map[vital_type]
 
-            # Only update if newer
+            # Only update if newer or same timestamp (BP systolic/diastolic share timestamp)
             current_timestamp = getattr(summary, timestamp_field)
-            if current_timestamp is None or timestamp > current_timestamp:
+            if current_timestamp is None or timestamp >= current_timestamp:
                 setattr(summary, value_field, value)
                 setattr(summary, timestamp_field, timestamp)
 

@@ -16,6 +16,8 @@ from sense_loop.schemas.patient import (
     PatientResponse,
     PatientSummaryResponse,
     PatientUpdate,
+    VitalReading,
+    VitalsHistoryResponse,
 )
 from sense_loop.services import EnrollmentService, PatientService
 
@@ -463,3 +465,249 @@ async def discharge_patient(
     db.commit()
 
     return {"success": True, "message": "Patient discharged successfully"}
+
+
+# Valid vital types for filtering
+VITAL_TYPES = {
+    "heart_rate": {"codes": ["heart_rate"], "label": "Heart Rate", "unit": "bpm"},
+    "blood_pressure": {
+        "codes": ["blood_pressure_systolic", "blood_pressure_diastolic"],
+        "label": "Blood Pressure",
+        "unit": "mmHg",
+    },
+    "spo2": {"codes": ["oxygen_saturation", "spo2"], "label": "SpO2", "unit": "%"},
+    "temperature": {
+        "codes": ["body_temperature", "temperature"],
+        "label": "Temperature",
+        "unit": "°F",
+    },
+    "respiratory_rate": {
+        "codes": ["respiratory_rate"],
+        "label": "Respiratory Rate",
+        "unit": "/min",
+    },
+    "hrv": {
+        "codes": ["heart_rate_variability_sdnn", "heart_rate_variability", "hrv"],
+        "label": "HRV",
+        "unit": "ms",
+    },
+}
+
+
+@router.get("/{patient_id}/vitals", response_model=VitalsHistoryResponse)
+async def get_patient_vitals(
+    patient_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+    vital_type: str | None = Query(None, description="Filter by vital type"),
+    aggregate_hr: bool = Query(True, description="Aggregate heart rate to hourly averages"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """Get historical vitals for a patient.
+
+    Returns paginated vital readings from data_point_series.
+    By default, heart rate data is aggregated to hourly averages to reduce volume.
+    Set aggregate_hr=false to get individual HR readings.
+
+    Valid vital_type values: heart_rate, blood_pressure, spo2, temperature, respiratory_rate, hrv
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import and_, func
+
+    from app.models import DataSource
+    from app.models.data_point_series import DataPointSeries
+    from app.models.series_type_definition import SeriesTypeDefinition
+
+    service = PatientService(db)
+    patient = service.get_by_id(patient_id)
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        patient.organization_id,
+        action="read",
+        resource_type="patient",
+        resource_id=patient_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this patient's vitals",
+        )
+
+    if not patient.ow_user_id:
+        return VitalsHistoryResponse(
+            items=[],
+            total=0,
+            page=page,
+            page_size=page_size,
+            pages=0,
+            vital_type=vital_type,
+        )
+
+    # Validate vital_type if provided
+    if vital_type and vital_type not in VITAL_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid vital_type. Valid values: {', '.join(VITAL_TYPES.keys())}",
+        )
+
+    # Build list of series codes to query
+    if vital_type:
+        codes_to_query = VITAL_TYPES[vital_type]["codes"]
+    else:
+        # All vitals except HR if aggregating (HR handled separately)
+        codes_to_query = []
+        for vt, config in VITAL_TYPES.items():
+            if vt != "heart_rate" or not aggregate_hr:
+                codes_to_query.extend(config["codes"])
+
+    readings: list[VitalReading] = []
+
+    # Query non-HR vitals (or HR if not aggregating)
+    if codes_to_query:
+        stmt = (
+            select(
+                SeriesTypeDefinition.code,
+                DataPointSeries.value,
+                DataPointSeries.recorded_at,
+                DataSource.source,
+            )
+            .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+            .join(
+                SeriesTypeDefinition,
+                DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id,
+            )
+            .where(
+                DataSource.user_id == patient.ow_user_id,
+                SeriesTypeDefinition.code.in_(codes_to_query),
+            )
+            .order_by(DataPointSeries.recorded_at.desc())
+        )
+        results = db.execute(stmt).all()
+
+        # Process BP specially - pair systolic/diastolic by timestamp
+        bp_readings: dict[str, dict] = {}  # timestamp -> {systolic, diastolic}
+
+        for code, value, recorded_at, source in results:
+            # Determine vital type from code
+            vt_name = None
+            for vt, config in VITAL_TYPES.items():
+                if code in config["codes"]:
+                    vt_name = vt
+                    break
+
+            if not vt_name:
+                continue
+
+            if vt_name == "blood_pressure":
+                ts_key = recorded_at.isoformat()
+                if ts_key not in bp_readings:
+                    bp_readings[ts_key] = {
+                        "recorded_at": recorded_at,
+                        "source": source,
+                        "systolic": None,
+                        "diastolic": None,
+                    }
+                if code == "blood_pressure_systolic":
+                    bp_readings[ts_key]["systolic"] = float(value)
+                else:
+                    bp_readings[ts_key]["diastolic"] = float(value)
+            else:
+                # Convert temperature from C to F if needed
+                val = float(value)
+                if vt_name == "temperature" and val < 50:
+                    val = val * 9 / 5 + 32
+
+                readings.append(
+                    VitalReading(
+                        vital_type=vt_name,
+                        value=round(val, 1),
+                        unit=VITAL_TYPES[vt_name]["unit"],
+                        recorded_at=recorded_at,
+                        source=source,
+                        is_aggregated=False,
+                    )
+                )
+
+        # Add paired BP readings
+        for ts_key, bp in bp_readings.items():
+            if bp["systolic"] is not None:
+                readings.append(
+                    VitalReading(
+                        vital_type="blood_pressure",
+                        value=bp["systolic"],
+                        value_secondary=bp["diastolic"],
+                        unit="mmHg",
+                        recorded_at=bp["recorded_at"],
+                        source=bp["source"],
+                        is_aggregated=False,
+                    )
+                )
+
+    # Handle aggregated HR if needed
+    if (vital_type is None or vital_type == "heart_rate") and aggregate_hr:
+        # Get hourly averages for HR
+        from sqlalchemy import literal_column
+
+        hr_codes = VITAL_TYPES["heart_rate"]["codes"]
+        hour_col = func.date_trunc("hour", DataPointSeries.recorded_at)
+        stmt = (
+            select(
+                hour_col.label("hour"),
+                func.avg(DataPointSeries.value).label("avg_value"),
+                func.count().label("count"),
+            )
+            .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
+            .join(
+                SeriesTypeDefinition,
+                DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id,
+            )
+            .where(
+                DataSource.user_id == patient.ow_user_id,
+                SeriesTypeDefinition.code.in_(hr_codes),
+            )
+            .group_by(hour_col)
+            .order_by(literal_column("hour").desc())
+        )
+        hr_results = db.execute(stmt).all()
+
+        for hour, avg_value, count in hr_results:
+            readings.append(
+                VitalReading(
+                    vital_type="heart_rate",
+                    value=round(float(avg_value), 0),
+                    unit="bpm",
+                    recorded_at=hour,
+                    source=f"avg of {count}",
+                    is_aggregated=True,
+                )
+            )
+
+    # Sort all readings by timestamp descending
+    readings.sort(key=lambda r: r.recorded_at, reverse=True)
+
+    # Paginate
+    total = len(readings)
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated = readings[start_idx:end_idx]
+
+    return VitalsHistoryResponse(
+        items=paginated,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+        vital_type=vital_type,
+    )

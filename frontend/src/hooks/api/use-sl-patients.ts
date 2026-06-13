@@ -12,6 +12,7 @@ import type {
   PatientCreate,
   PatientQueryParams,
   PatientUpdate,
+  VitalsQueryParams,
 } from '@/lib/api/types/sense-loop';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
 import { queryKeys } from '@/lib/query/keys';
@@ -129,5 +130,14 @@ export function useDischargePatient() {
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to discharge patient');
     },
+  });
+}
+
+export function useSlPatientVitals(patientId: string, params?: VitalsQueryParams) {
+  return useQuery({
+    queryKey: queryKeys.sl.patients.vitals(patientId, params),
+    queryFn: () => slPatientsService.getVitals(patientId, params),
+    enabled: !!patientId,
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
