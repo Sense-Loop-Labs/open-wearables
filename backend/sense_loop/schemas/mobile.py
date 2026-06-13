@@ -251,3 +251,27 @@ class QuestionnaireSubmitResponse(BaseModel):
     total_score: float | None = None
     score_interpretation: str | None = None
     message: str | None = None
+
+
+# =============================================================================
+# Device Registration (FCM Push Notifications)
+# =============================================================================
+
+class DeviceRegisterRequest(BaseModel):
+    """Request to register a device for push notifications."""
+    device_token: str = Field(..., description="FCM device token")
+    platform: str = Field(default="ios", description="Device platform: ios or android")
+    device_name: str | None = Field(None, description="Device name (e.g., 'iPhone 15 Pro')")
+    app_version: str | None = Field(None, description="App version string")
+
+
+class DeviceRegisterResponse(BaseModel):
+    """Response after registering a device."""
+    success: bool
+    device_id: UUID
+    message: str | None = None
+
+
+class DeviceUnregisterRequest(BaseModel):
+    """Request to unregister a device (logout/disable notifications)."""
+    device_token: str

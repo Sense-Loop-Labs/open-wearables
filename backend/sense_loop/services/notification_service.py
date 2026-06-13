@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime
 from html import escape
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sense_loop.config import sl_settings
@@ -13,12 +16,54 @@ from sense_loop.models import Alert, Patient, Practitioner
 
 logger = logging.getLogger(__name__)
 
+# Firebase app singleton
+_firebase_app = None
+
 
 def _get_sendgrid_client():
     """Get SendGrid client, lazily imported."""
     from sendgrid import SendGridAPIClient
 
     return SendGridAPIClient(sl_settings.sendgrid_api_key.get_secret_value())
+
+
+def _init_firebase():
+    """Initialize Firebase Admin SDK lazily."""
+    global _firebase_app
+
+    if _firebase_app is not None:
+        return _firebase_app
+
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+
+        # Check if already initialized
+        try:
+            _firebase_app = firebase_admin.get_app()
+            return _firebase_app
+        except ValueError:
+            pass  # Not initialized yet
+
+        # Initialize from credentials
+        if sl_settings.firebase_credentials_path:
+            cred = credentials.Certificate(sl_settings.firebase_credentials_path)
+        elif sl_settings.firebase_credentials_json:
+            cred_dict = json.loads(
+                sl_settings.firebase_credentials_json.get_secret_value()
+            )
+            cred = credentials.Certificate(cred_dict)
+        else:
+            logger.warning("Firebase credentials not configured, push notifications disabled")
+            return None
+
+        _firebase_app = firebase_admin.initialize_app(cred)
+        logger.info("Firebase Admin SDK initialized")
+        return _firebase_app
+
+    except Exception as e:
+        logger.error("Failed to initialize Firebase: %s", e)
+        return None
 
 
 class NotificationService:
@@ -154,13 +199,261 @@ class NotificationService:
                     e,
                 )
 
+    async def send_push(
+        self,
+        patient_id: UUID,
+        title: str,
+        body: str,
+        data: dict | None = None,
+    ) -> int:
+        """Send push notification to a patient's registered devices.
+
+        Args:
+            patient_id: Patient UUID
+            title: Notification title
+            body: Notification body text
+            data: Optional data payload for the app
+
+        Returns:
+            Number of devices notified
+        """
+        if not sl_settings.push_notifications_enabled:
+            logger.debug("Push notifications disabled")
+            return 0
+
+        app = _init_firebase()
+        if not app:
+            logger.warning("Firebase not initialized, skipping push notification")
+            return 0
+
+        from firebase_admin import messaging
+        from sense_loop.models import PatientDevice
+
+        # Get active devices for patient
+        stmt = select(PatientDevice).where(
+            PatientDevice.patient_id == patient_id,
+            PatientDevice.is_active == True,  # noqa: E712
+        )
+        devices = list(self.db.execute(stmt).scalars().all())
+
+        if not devices:
+            logger.debug("No registered devices for patient %s", patient_id)
+            return 0
+
+        # Send to each device
+        success_count = 0
+        for device in devices:
+            try:
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data={k: str(v) for k, v in (data or {}).items()},
+                    token=device.device_token,
+                    # iOS specific settings
+                    apns=messaging.APNSConfig(
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                sound="default",
+                                badge=1,
+                            ),
+                        ),
+                    ),
+                )
+
+                response = messaging.send(message)
+                logger.info(
+                    "Push notification sent to device %s: %s",
+                    device.id,
+                    response,
+                )
+                success_count += 1
+
+                # Update last used timestamp
+                device.last_used_at = datetime.utcnow()
+
+            except messaging.UnregisteredError:
+                # Token is no longer valid, mark device as inactive
+                logger.warning(
+                    "Device %s token is unregistered, marking inactive",
+                    device.id,
+                )
+                device.is_active = False
+
+            except Exception as e:
+                logger.error(
+                    "Failed to send push to device %s: %s",
+                    device.id,
+                    e,
+                )
+
+        self.db.flush()
+        return success_count
+
+    async def send_patient_notification(
+        self,
+        patient_id: UUID,
+        title: str,
+        body: str,
+        data: dict | None = None,
+        channel: str | None = None,
+    ) -> bool:
+        """Send notification to patient via configured channel.
+
+        Args:
+            patient_id: Patient UUID
+            title: Notification title
+            body: Notification body text
+            data: Optional data payload (for push)
+            channel: Override channel ("email", "sms", "push"), or None to use config
+
+        Returns:
+            True if notification was sent successfully
+        """
+        from sense_loop.models import Patient
+        from sense_loop.services import ConfigService
+
+        # Get patient for email/phone
+        patient = self.db.get(Patient, patient_id)
+        if not patient:
+            logger.warning("Patient %s not found", patient_id)
+            return False
+
+        # Determine channel from config if not specified
+        if not channel:
+            config_service = ConfigService(self.db)
+            channel = config_service.get_patient_reminder_channel(patient.organization_id)
+
+        logger.info(
+            "Sending %s notification to patient %s: %s",
+            channel,
+            patient_id,
+            title,
+        )
+
+        if channel == "email":
+            if not patient.email:
+                logger.warning("Patient %s has no email address", patient_id)
+                return False
+            await self.send_patient_email(
+                patient=patient,
+                subject=title,
+                body=body,
+            )
+            return True
+
+        elif channel == "sms":
+            if not patient.phone:
+                logger.warning("Patient %s has no phone number", patient_id)
+                return False
+            await self._send_sms(patient.phone, f"{title}: {body}")
+            return True
+
+        elif channel == "push":
+            count = await self.send_push(patient_id, title, body, data)
+            return count > 0
+
+        else:
+            logger.warning("Unknown notification channel: %s", channel)
+            return False
+
+    async def send_patient_email(
+        self,
+        patient: "Patient",
+        subject: str,
+        body: str,
+    ) -> None:
+        """Send email to a patient.
+
+        Args:
+            patient: Patient model instance
+            subject: Email subject
+            body: Email body text
+        """
+        if not patient.email:
+            logger.warning("Patient %s has no email address", patient.id)
+            return
+
+        # Build HTML email with branding
+        html_body = self._build_patient_email_html(
+            patient_name=patient.first_name,
+            subject=subject,
+            body=body,
+        )
+
+        await self._send_email(
+            to_email=patient.email,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+        )
+
+    def _build_patient_email_html(
+        self,
+        patient_name: str,
+        subject: str,
+        body: str,
+    ) -> str:
+        """Build HTML email for patient notifications."""
+        from html import escape
+
+        return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f5f5f5;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid #eee;">
+                            <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #7c3aed;">Sense Loop</h1>
+                        </td>
+                    </tr>
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <h2 style="margin: 0 0 20px; font-size: 20px; font-weight: 600; color: #1a1a1a;">{escape(subject)}</h2>
+                            <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.6; color: #4a4a4a;">
+                                Hi {escape(patient_name)},
+                            </p>
+                            <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #4a4a4a;">
+                                {escape(body)}
+                            </p>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 40px; background-color: #fafafa; border-top: 1px solid #eee; border-radius: 0 0 8px 8px;">
+                            <p style="margin: 0; font-size: 12px; color: #888; text-align: center;">
+                                &copy; Sense Loop Labs &bull; Clinical Remote Patient Monitoring
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+
     async def _send_care_team_push(
         self, alert: Alert, care_team: list[Practitioner]
     ) -> None:
-        """Send push notifications to care team."""
-        # TODO: Implement push notifications
-        # This would integrate with Firebase, OneSignal, or similar
-        logger.debug("Push notifications not yet implemented")
+        """Send push notifications to care team.
+
+        Note: This is for practitioner/clinician devices, not patient devices.
+        Currently not implemented as clinicians use the web dashboard.
+        """
+        # TODO: Implement push notifications for clinician mobile apps
+        logger.debug("Care team push notifications not yet implemented")
 
     async def _send_email(
         self,

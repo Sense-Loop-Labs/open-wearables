@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,11 @@ class SenseLoopSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="SL_",
         extra="ignore",
+        env_file=(
+            str(Path(__file__).parent.parent / "config" / ".env"),
+            str(Path(__file__).parent.parent / "config" / ".env.local"),
+        ),
+        env_file_encoding="utf-8",
     )
 
     # Feature flag to enable/disable the extension
@@ -49,6 +55,14 @@ class SenseLoopSettings(BaseSettings):
     twilio_account_sid: str | None = None
     twilio_auth_token: SecretStr | None = None
     twilio_from_number: str | None = None
+
+    # Firebase Cloud Messaging (FCM) settings
+    # Path to Firebase service account JSON file
+    firebase_credentials_path: str | None = None
+    # Or provide credentials as JSON string (for containerized deployments)
+    firebase_credentials_json: SecretStr | None = None
+    # Enable/disable push notifications
+    push_notifications_enabled: bool = True
 
     # Default alert thresholds
     default_hr_high_critical: int = 120

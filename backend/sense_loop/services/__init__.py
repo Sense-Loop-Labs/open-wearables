@@ -12,6 +12,7 @@ from .questionnaire_service import QuestionnaireService
 from .notification_service import NotificationService
 from .fhir_export_service import FHIRExportService
 from .value_set_service import ValueSetService
+from .config_service import ConfigService
 
 # Instruction template services
 from .activity_template_service import ActivityTemplateService
@@ -34,6 +35,7 @@ __all__ = [
     "NotificationService",
     "FHIRExportService",
     "ValueSetService",
+    "ConfigService",
     # Instruction template services
     "ActivityTemplateService",
     "InstructionTemplateService",

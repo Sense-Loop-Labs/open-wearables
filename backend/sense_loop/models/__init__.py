@@ -9,6 +9,7 @@ from .practitioner import Practitioner
 from .practitioner_role import PractitionerRole
 from .practitioner_invite import PractitionerInvite
 from .patient import Patient
+from .patient_device import PatientDevice
 from .alert_protocol import AlertProtocol, AlertProtocolRule, AlertRiskWindow
 from .alert import Alert
 from .patient_summary import PatientSummary
@@ -18,6 +19,7 @@ from .questionnaire_response import QuestionnaireResponse, QuestionnaireAnswer
 from .audit_log import AuditLog
 from .value_set import ValueSet, ValueSetItem
 from .clinical_action import ClinicalAction
+from .system_config import SystemConfig
 
 # Instruction template models
 from .activity_template import ActivityTemplate
@@ -41,6 +43,7 @@ __all__ = [
     "PractitionerRole",
     "PractitionerInvite",
     "Patient",
+    "PatientDevice",
     "AlertProtocol",
     "AlertProtocolRule",
     "AlertRiskWindow",
@@ -55,6 +58,7 @@ __all__ = [
     "ValueSet",
     "ValueSetItem",
     "ClinicalAction",
+    "SystemConfig",
     # Instruction templates
     "ActivityTemplate",
     "InstructionTemplate",

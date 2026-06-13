@@ -38,6 +38,9 @@ class Organization(BaseDbModel):
     #     "branding": {"logo_url": "...", "primary_color": "#..."}
     # }
 
+    # Default timezone for patients in this organization
+    default_timezone: Mapped[str_100] = mapped_column(default="America/Los_Angeles")
+
     # Status
     is_active: Mapped[bool] = mapped_column(default=True)
     deactivated_at: Mapped[datetime | None] = mapped_column(nullable=True)

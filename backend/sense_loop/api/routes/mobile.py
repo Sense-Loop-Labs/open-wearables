@@ -14,6 +14,9 @@ from sense_loop.schemas.mobile import (
     BloodPressureSummary,
     CarePlanResponse,
     DashboardSummaryResponse,
+    DeviceRegisterRequest,
+    DeviceRegisterResponse,
+    DeviceUnregisterRequest,
     HeartRateSummary,
     HRVSummary,
     HRVTrendPoint,
@@ -996,3 +999,89 @@ def _task_to_response(task):
         snoozed_until=task.snoozed_until,
         snooze_count=task.snooze_count,
     )
+
+
+# =============================================================================
+# Device Registration for Push Notifications
+# =============================================================================
+
+@router.post("/devices/register", response_model=DeviceRegisterResponse)
+async def register_device(
+    request: DeviceRegisterRequest,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+):
+    """Register a device for push notifications.
+
+    Called by the iOS app after obtaining FCM token.
+    Updates existing device or creates new registration.
+    """
+    from uuid import uuid4
+    from sense_loop.models import PatientDevice
+
+    # Check if device token already exists
+    stmt = select(PatientDevice).where(PatientDevice.device_token == request.device_token)
+    existing = db.execute(stmt).scalar_one_or_none()
+
+    if existing:
+        # Update existing device
+        existing.patient_id = patient.id
+        existing.platform = request.platform
+        existing.device_name = request.device_name
+        existing.app_version = request.app_version
+        existing.is_active = True
+        existing.last_used_at = datetime.utcnow()
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+
+        return DeviceRegisterResponse(
+            success=True,
+            device_id=existing.id,
+            message="Device updated",
+        )
+
+    # Create new device registration
+    device = PatientDevice(
+        id=uuid4(),
+        patient_id=patient.id,
+        device_token=request.device_token,
+        platform=request.platform,
+        device_name=request.device_name,
+        app_version=request.app_version,
+        is_active=True,
+        last_used_at=datetime.utcnow(),
+    )
+    db.add(device)
+    db.commit()
+
+    return DeviceRegisterResponse(
+        success=True,
+        device_id=device.id,
+        message="Device registered",
+    )
+
+
+@router.post("/devices/unregister")
+async def unregister_device(
+    request: DeviceUnregisterRequest,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+):
+    """Unregister a device (disable push notifications).
+
+    Called when user logs out or disables notifications.
+    """
+    from sense_loop.models import PatientDevice
+
+    stmt = select(PatientDevice).where(
+        PatientDevice.device_token == request.device_token,
+        PatientDevice.patient_id == patient.id,
+    )
+    device = db.execute(stmt).scalar_one_or_none()
+
+    if device:
+        device.is_active = False
+        device.updated_at = datetime.utcnow()
+        db.commit()
+
+    return {"success": True, "message": "Device unregistered"}

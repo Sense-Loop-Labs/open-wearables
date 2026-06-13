@@ -251,8 +251,13 @@ class PatientInstructionPlanService:
         - Removed items
         - Description overrides
         """
-        # Start with template content
-        content = template.content.copy() if template.content else {"sections": []}
+        from sense_loop.services.instruction_template_service import (
+            InstructionTemplateService,
+        )
+
+        # First resolve activity references to get timing, titles, etc.
+        template_service = InstructionTemplateService(self.db)
+        content = template_service.get_resolved_content(template)
 
         if not customizations:
             return content

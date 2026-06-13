@@ -69,8 +69,9 @@ class Patient(BaseDbModel):
     monitoring_start_date: Mapped[date | None] = mapped_column(nullable=True)
     monitoring_end_date: Mapped[date | None] = mapped_column(nullable=True)
 
-    # Timezone (for task scheduling and notifications)
-    timezone: Mapped[str_50] = mapped_column(default="America/New_York")
+    # Timezone override (for task scheduling and notifications)
+    # If None, uses organization's default_timezone
+    timezone_override: Mapped[str_50 | None] = mapped_column(nullable=True)
 
     # Alert protocol
     alert_protocol_id: Mapped[UUID | None] = mapped_column(
@@ -168,3 +169,12 @@ class Patient(BaseDbModel):
         if self.monitoring_end_date and today > self.monitoring_end_date:
             return False
         return True
+
+    @property
+    def timezone(self) -> str:
+        """Get patient's timezone, falling back to organization default."""
+        if self.timezone_override:
+            return self.timezone_override
+        if self.organization:
+            return self.organization.default_timezone
+        return "America/Los_Angeles"  # Ultimate fallback

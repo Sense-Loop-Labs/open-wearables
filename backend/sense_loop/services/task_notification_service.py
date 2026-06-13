@@ -114,9 +114,9 @@ class TaskNotificationService:
         title = "Task Reminder"
         body = self._build_reminder_body(task)
 
-        # Send via notification service
+        # Send via notification service (channel determined by config)
         if self.notification_service:
-            await self.notification_service.send_push(
+            await self.notification_service.send_patient_notification(
                 patient_id=task.patient_id,
                 title=title,
                 body=body,
@@ -163,7 +163,7 @@ class TaskNotificationService:
         body = self._build_overdue_body(task)
 
         if self.notification_service:
-            await self.notification_service.send_push(
+            await self.notification_service.send_patient_notification(
                 patient_id=task.patient_id,
                 title=title,
                 body=body,
@@ -213,7 +213,7 @@ class TaskNotificationService:
         body = prompt
 
         if self.notification_service:
-            await self.notification_service.send_push(
+            await self.notification_service.send_patient_notification(
                 patient_id=task.patient_id,
                 title=title,
                 body=body,
@@ -256,7 +256,7 @@ class TaskNotificationService:
         body = self._build_success_body(task, data_value)
 
         if self.notification_service:
-            await self.notification_service.send_push(
+            await self.notification_service.send_patient_notification(
                 patient_id=task.patient_id,
                 title=title,
                 body=body,
@@ -301,7 +301,7 @@ class TaskNotificationService:
         body = self._build_daily_summary_body(tasks)
 
         if self.notification_service:
-            await self.notification_service.send_push(
+            await self.notification_service.send_patient_notification(
                 patient_id=patient_id,
                 title=title,
                 body=body,
@@ -383,37 +383,44 @@ class TaskNotificationService:
         return count
 
     async def _send_overdue_notifications(self, now: datetime) -> int:
-        """Send notifications for overdue tasks."""
-        overdue_threshold = now - timedelta(minutes=self.config.overdue_delay_minutes)
+        """Send notifications for overdue tasks.
 
-        # Find pending tasks that are past their scheduled time
+        A task is considered overdue when its time window has closed:
+        scheduled_at + time_window_minutes + overdue_delay < now
+        """
+        # Find pending tasks - we'll filter by window in Python since it varies per task
         stmt = select(PatientInstructionTask).where(
             PatientInstructionTask.status == "pending",
-            PatientInstructionTask.scheduled_at < overdue_threshold,
         )
 
         tasks = list(self.db.execute(stmt).scalars().all())
 
         count = 0
         for task in tasks:
-            result = await self.send_overdue(task)
-            if result:
-                count += 1
+            # Calculate when the task's time window closes
+            window_minutes = task.time_window_minutes or 60  # Default 1 hour
+            window_end = task.scheduled_at + timedelta(minutes=window_minutes)
+
+            # Task is overdue if window closed + delay has passed
+            overdue_after = window_end + timedelta(minutes=self.config.overdue_delay_minutes)
+
+            if now >= overdue_after:
+                result = await self.send_overdue(task)
+                if result:
+                    count += 1
 
         return count
 
     async def _send_confirmation_requests(self, now: datetime) -> int:
-        """Send confirmation requests for hybrid tasks."""
-        confirmation_threshold = now - timedelta(
-            minutes=self.config.confirmation_delay_minutes
-        )
+        """Send confirmation requests for hybrid tasks.
 
-        # Find pending hybrid tasks past their scheduled time
-        # that don't have linked data (not auto-completed)
+        Confirmation is requested after the time window closes and no
+        auto-completion data was detected.
+        """
+        # Find pending hybrid tasks without linked data
         stmt = select(PatientInstructionTask).where(
             PatientInstructionTask.status == "pending",
             PatientInstructionTask.completion_method == "hybrid",
-            PatientInstructionTask.scheduled_at < confirmation_threshold,
             PatientInstructionTask.linked_data_id.is_(None),
         )
 
@@ -421,9 +428,17 @@ class TaskNotificationService:
 
         count = 0
         for task in tasks:
-            result = await self.send_confirmation(task)
-            if result:
-                count += 1
+            # Calculate when the task's time window closes
+            window_minutes = task.time_window_minutes or 60
+            window_end = task.scheduled_at + timedelta(minutes=window_minutes)
+
+            # Send confirmation after window closes + delay
+            confirm_after = window_end + timedelta(minutes=self.config.confirmation_delay_minutes)
+
+            if now >= confirm_after:
+                result = await self.send_confirmation(task)
+                if result:
+                    count += 1
 
         return count
 
