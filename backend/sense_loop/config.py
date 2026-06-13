@@ -37,6 +37,9 @@ class SenseLoopSettings(BaseSettings):
     # FHIR export settings
     fhir_export_batch_size: int = 100
 
+    # Frontend app URL (for invite links, password reset, etc.)
+    app_base_url: str = "http://localhost:3002"
+
     # Notification settings (SendGrid)
     sendgrid_api_key: SecretStr | None = None
     notification_from_email: str = "noreply@senselooplabs.com"

@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Users,
   AlertTriangle,
+  ClipboardList,
   Stethoscope,
   Building2,
   PanelLeft,
@@ -42,6 +43,11 @@ const navItems = [
     path: '/sl/alerts',
     icon: AlertTriangle,
     hasBadge: true,
+  },
+  {
+    label: 'Care Templates',
+    path: '/sl/instruction-templates',
+    icon: ClipboardList,
   },
   {
     label: 'Clinicians',

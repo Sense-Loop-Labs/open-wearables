@@ -138,3 +138,31 @@ class AcceptInviteResponse(BaseModel):
     success: bool
     practitioner_id: UUID | None = None
     message: str
+
+
+class RoleDefinitionResponse(BaseModel):
+    """Schema for role definition response."""
+
+    id: UUID
+    code: str
+    display_name: str
+
+    # Permission flags
+    can_manage_patients: bool
+    can_manage_alerts: bool
+    can_resolve_alerts: bool
+    can_acknowledge_alerts: bool
+    can_manage_care_plans: bool
+    can_manage_clinicians: bool
+    can_manage_org_settings: bool
+    can_view_audit_logs: bool
+    can_manage_alert_protocols: bool
+    can_export_data: bool
+
+    # Meta
+    is_system_role: bool
+    is_active: bool
+    privilege_level: int
+
+    class Config:
+        from_attributes = True

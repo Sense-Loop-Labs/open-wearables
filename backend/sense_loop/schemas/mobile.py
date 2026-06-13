@@ -8,6 +8,19 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 # =============================================================================
+# Request Schemas
+# =============================================================================
+
+
+class SummaryRequest(BaseModel):
+    """Request body for dashboard summary endpoint."""
+
+    patient_id: str | None = None  # Optional - can be extracted from token
+    days: int | None = 7
+    timezone: str | None = None  # e.g., "America/Los_Angeles"
+
+
+# =============================================================================
 # Vitals Section
 # =============================================================================
 

@@ -47,28 +47,31 @@ export interface Practitioner {
   email: string;
   first_name: string;
   last_name: string;
+  full_name: string;
+  display_name: string;
   phone: string | null;
+  npi_number: string | null;
+  credentials: string | null;
   is_active: boolean;
   email_verified_at: string | null;
   last_login_at: string | null;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface PractitionerRole {
   id: string;
-  practitioner_id: string;
   organization_id: string;
-  role_definition_id: string;
+  organization_name: string;
+  role_code: string;
+  role_display_name: string;
   is_active: boolean;
-  invited_at: string | null;
+  is_primary: boolean;
   accepted_at: string | null;
-  organization: Organization;
-  role_definition: RoleDefinition;
 }
 
 export interface PractitionerWithRoles extends Practitioner {
-  practitioner_roles: PractitionerRole[];
+  roles: PractitionerRole[];
 }
 
 export interface RoleDefinition {
@@ -83,20 +86,25 @@ export interface RoleDefinition {
   can_manage_clinicians: boolean;
   can_manage_org_settings: boolean;
   can_view_audit_logs: boolean;
+  can_manage_alert_protocols: boolean;
+  can_export_data: boolean;
   is_system_role: boolean;
   is_active: boolean;
+  privilege_level: number;
 }
 
 export interface PractitionerInvite {
   id: string;
   organization_id: string;
+  organization_name: string;
   email: string;
   first_name: string;
   last_name: string;
-  role: string;
+  full_name: string;
+  role_code: string;
   expires_at: string;
-  invited_by_id: string;
-  accepted_at: string | null;
+  is_expired: boolean;
+  is_pending: boolean;
   created_at: string;
 }
 
@@ -104,7 +112,15 @@ export interface InviteClinicianRequest {
   email: string;
   first_name: string;
   last_name: string;
-  role: string;
+  role_code: string;
+}
+
+export interface ClinicianUpdate {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  npi_number?: string;
+  credentials?: string;
 }
 
 // ============================================================================
@@ -390,7 +406,7 @@ export interface ResetPasswordRequest {
 
 export interface AcceptInviteRequest {
   invite_id: string;
-  secret: string;
+  invite_secret: string;
   password: string;
   password_confirm: string;
 }
@@ -463,3 +479,250 @@ export interface ClinicalActionCreate {
 }
 
 export type PaginatedClinicalActions = PaginatedResponse<ClinicalAction>;
+
+// ============================================================================
+// Instruction Templates
+// ============================================================================
+
+export interface ActivityTemplate {
+  id: string;
+  organization_id: string | null;
+  name: string;
+  title: string;
+  description: string;
+  status: 'draft' | 'active' | 'retired';
+  version: string;
+  category_code: string;
+  kind: string;
+  completion_method: 'auto' | 'manual' | 'hybrid';
+  data_trigger_types: string[] | null;
+  data_threshold: Record<string, unknown> | null;
+  confirmation_prompt: string | null;
+  content: Record<string, unknown>;
+  default_timing: TimingConfig | null;
+  code_system: string | null;
+  code_value: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActivityTemplateCreate {
+  title: string;
+  description: string;
+  category_code: string;
+  organization_id?: string;
+  kind?: string;
+  completion_method?: 'auto' | 'manual' | 'hybrid';
+  data_trigger_types?: string[];
+  data_threshold?: Record<string, unknown>;
+  confirmation_prompt?: string;
+  content?: Record<string, unknown>;
+  default_timing?: TimingConfig;
+  code_system?: string;
+  code_value?: string;
+}
+
+export interface ActivityTemplateUpdate {
+  title?: string;
+  description?: string;
+  category_code?: string;
+  kind?: string;
+  completion_method?: 'auto' | 'manual' | 'hybrid';
+  data_trigger_types?: string[];
+  data_threshold?: Record<string, unknown>;
+  confirmation_prompt?: string;
+  content?: Record<string, unknown>;
+  default_timing?: TimingConfig;
+  code_system?: string;
+  code_value?: string;
+  status?: 'draft' | 'active' | 'retired';
+}
+
+export interface InstructionTemplate {
+  id: string;
+  organization_id: string | null;
+  name: string;
+  title: string;
+  description: string;
+  status: 'draft' | 'active' | 'retired';
+  version: string;
+  content: InstructionTemplateContent;
+  health_focus_codes: string[];
+  notification_config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InstructionTemplateContent {
+  sections: InstructionSection[];
+}
+
+export interface InstructionSection {
+  id: string;
+  title: string;
+  description?: string;
+  items: InstructionItem[];
+}
+
+export interface InstructionItem {
+  id: string;
+  type?: 'activity_ref' | 'custom';
+  activity_template_id?: string;
+  title?: string;
+  description?: string;
+  timing?: TimingConfig;
+  activity?: ActivityTemplate;
+}
+
+export interface TimingConfig {
+  frequency?: number;
+  period?: number;
+  periodUnit?: 'd' | 'wk' | 'mo';
+  timeOfDay?: string[];
+  dayOfWeek?: string[];
+  boundsType?: 'ongoing' | 'duration' | 'date_range';
+  boundsDurationDays?: number;
+  relativeStartDays?: number;
+  windowMinutes?: number;
+}
+
+export interface InstructionTemplateCreate {
+  title: string;
+  description: string;
+  organization_id?: string;
+  content?: InstructionTemplateContent;
+  health_focus_codes?: string[];
+  notification_config?: Record<string, unknown>;
+}
+
+export interface InstructionTemplateUpdate {
+  title?: string;
+  description?: string;
+  content?: InstructionTemplateContent;
+  health_focus_codes?: string[];
+  notification_config?: Record<string, unknown>;
+  status?: 'draft' | 'active' | 'retired';
+  version?: string;
+}
+
+export interface InstructionTemplatePreview {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  version: string;
+  status: string;
+  health_focus_codes: string[];
+  content: InstructionTemplateContent;
+  notification_config: Record<string, unknown> | null;
+}
+
+// ============================================================================
+// Patient Instruction Plans
+// ============================================================================
+
+export interface PatientInstructionPlan {
+  id: string;
+  patient_id: string;
+  template_id: string;
+  template_name: string | null;
+  template_title: string | null;
+  status: 'active' | 'completed' | 'cancelled';
+  effective_start: string;
+  effective_end: string | null;
+  customizations: Record<string, unknown> | null;
+  reference_date: string | null;
+  reference_type: string | null;
+  tasks_generated_through: string | null;
+  assigned_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PatientPlanAssign {
+  template_id: string;
+  effective_start?: string;
+  effective_end?: string;
+  customizations?: Record<string, unknown>;
+  reference_date?: string;
+  reference_type?: string;
+  generate_tasks?: boolean;
+}
+
+export interface PatientPlanUpdate {
+  customizations?: Record<string, unknown>;
+  effective_end?: string;
+  regenerate_tasks?: boolean;
+}
+
+// ============================================================================
+// Patient Tasks
+// ============================================================================
+
+export interface PatientTask {
+  id: string;
+  plan_id: string;
+  task_type: string;
+  task_code: string;
+  title: string;
+  description: string | null;
+  completion_method: 'auto' | 'manual' | 'hybrid';
+  status: 'pending' | 'completed' | 'skipped' | 'missed' | 'cancelled';
+  scheduled_date: string;
+  scheduled_at: string;
+  scheduled_time_local: string | null;
+  time_window_minutes: number;
+  confirmation_prompt: string | null;
+  completed_at: string | null;
+  completion_source: string | null;
+  linked_data_value: string | null;
+  user_notes: string | null;
+  snoozed_until: string | null;
+  snooze_count: number;
+}
+
+export interface DailyTasksResponse {
+  date: string;
+  tasks: PatientTask[];
+  total: number;
+  pending: number;
+  completed: number;
+  missed: number;
+}
+
+export interface TaskListResponse {
+  items: PatientTask[];
+  total: number;
+  pending_count: number;
+  completed_count: number;
+}
+
+// Template query params
+export interface InstructionTemplateQueryParams {
+  organization_id?: string;
+  include_shared?: boolean;
+  status?: 'draft' | 'active' | 'retired';
+  health_focus?: string;
+}
+
+export interface ActivityTemplateQueryParams {
+  organization_id?: string;
+  include_shared?: boolean;
+  status?: 'draft' | 'active' | 'retired';
+  category?: string;
+}
+
+export type PaginatedActivityTemplates = {
+  items: ActivityTemplate[];
+  total: number;
+};
+
+export type PaginatedInstructionTemplates = {
+  items: InstructionTemplate[];
+  total: number;
+};
+
+export type PaginatedPatientPlans = {
+  items: PatientInstructionPlan[];
+  total: number;
+};

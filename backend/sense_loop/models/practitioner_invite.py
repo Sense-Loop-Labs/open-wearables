@@ -1,6 +1,6 @@
 """Practitioner invite model - pending invitations."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import ForeignKey
@@ -53,7 +53,7 @@ class PractitionerInvite(BaseDbModel):
     @property
     def is_expired(self) -> bool:
         """Check if the invite has expired."""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
     @property
     def is_pending(self) -> bool:

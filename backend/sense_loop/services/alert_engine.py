@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
@@ -192,17 +192,6 @@ class AlertEngine:
                 )
                 return AlertEvaluationResult(action=AlertAction.UPDATED, alert=updated_alert)
             else:
-                # Check cooldown for recently resolved alerts (prevent flapping)
-                if self._is_in_resolution_cooldown(patient_id, vital_type, rule.cooldown_minutes):
-                    logger.debug(
-                        "Alert for patient %s vital %s in resolution cooldown",
-                        patient_id,
-                        vital_type,
-                    )
-                    return AlertEvaluationResult(
-                        action=AlertAction.NONE, reason="In resolution cooldown"
-                    )
-
                 # CREATE new alert
                 alert = self._create_alert(
                     patient=patient,
@@ -393,27 +382,6 @@ class AlertEngine:
             )
         ).order_by(Alert.triggered_at.desc()).limit(1)
         return self.db.execute(stmt).scalar_one_or_none()
-
-    def _is_in_resolution_cooldown(
-        self, patient_id: UUID, vital_type: str, cooldown_minutes: int
-    ) -> bool:
-        """Check if there's a recently resolved alert for this vital type.
-
-        Prevents alert flapping (rapid create/resolve/create cycles).
-        Only applies AFTER an alert has been resolved.
-        """
-        cooldown_start = datetime.utcnow() - timedelta(minutes=cooldown_minutes)
-
-        stmt = select(Alert).where(
-            and_(
-                Alert.patient_id == patient_id,
-                Alert.vital_type == vital_type,
-                Alert.status == "auto_resolved",
-                Alert.resolved_at >= cooldown_start,
-            )
-        )
-        recent_resolved = self.db.execute(stmt).scalar_one_or_none()
-        return recent_resolved is not None
 
     def _update_alert(
         self,

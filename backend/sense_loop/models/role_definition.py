@@ -49,6 +49,11 @@ class RoleDefinition(BaseDbModel):
     is_system_role: Mapped[bool] = mapped_column(default=False)  # True for built-in roles
     is_active: Mapped[bool] = mapped_column(default=True)
 
+    # Privilege level for role assignment hierarchy
+    # Higher level = more privileged. Users can only assign roles at or below their level.
+    # e.g., org_admin (80) can assign doctor (60) but not another org_admin
+    privilege_level: Mapped[int] = mapped_column(default=50)
+
     # Relationships
     organization: Mapped["Organization | None"] = relationship(
         back_populates="role_definitions",
@@ -60,10 +65,12 @@ class RoleDefinition(BaseDbModel):
 
 
 # Default system roles to seed
+# privilege_level: Higher = more privileged. Users can only assign roles at or below their level.
 DEFAULT_ROLES = [
     {
         "code": "super_admin",
         "display_name": "Super Admin",
+        "privilege_level": 100,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": True,
@@ -79,6 +86,7 @@ DEFAULT_ROLES = [
     {
         "code": "org_admin",
         "display_name": "Organization Admin",
+        "privilege_level": 80,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": True,
@@ -94,6 +102,7 @@ DEFAULT_ROLES = [
     {
         "code": "doctor",
         "display_name": "Physician",
+        "privilege_level": 60,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": True,
@@ -109,6 +118,7 @@ DEFAULT_ROLES = [
     {
         "code": "physician_assistant",
         "display_name": "Physician Assistant",
+        "privilege_level": 55,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": True,
@@ -124,6 +134,7 @@ DEFAULT_ROLES = [
     {
         "code": "nurse_practitioner",
         "display_name": "Nurse Practitioner",
+        "privilege_level": 55,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": True,
@@ -139,6 +150,7 @@ DEFAULT_ROLES = [
     {
         "code": "nurse",
         "display_name": "Nurse",
+        "privilege_level": 50,
         "can_manage_patients": True,
         "can_manage_alerts": True,
         "can_resolve_alerts": False,
@@ -154,6 +166,7 @@ DEFAULT_ROLES = [
     {
         "code": "medical_assistant",
         "display_name": "Medical Assistant",
+        "privilege_level": 40,
         "can_manage_patients": True,
         "can_manage_alerts": False,
         "can_resolve_alerts": False,
@@ -169,6 +182,7 @@ DEFAULT_ROLES = [
     {
         "code": "care_coordinator",
         "display_name": "Care Coordinator",
+        "privilege_level": 45,
         "can_manage_patients": True,
         "can_manage_alerts": False,
         "can_resolve_alerts": False,
@@ -184,6 +198,7 @@ DEFAULT_ROLES = [
     {
         "code": "readonly",
         "display_name": "Read Only",
+        "privilege_level": 10,
         "can_manage_patients": False,
         "can_manage_alerts": False,
         "can_resolve_alerts": False,

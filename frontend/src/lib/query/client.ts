@@ -1,7 +1,26 @@
-import { QueryClient } from '@tanstack/react-query';
+import { MutationCache, QueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ApiError } from '../errors/api-error';
 
 export const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      // Don't show toast if mutation has its own onError handler
+      // or if throwOnError is false (component handles errors)
+      if (mutation.options.onError || mutation.options.throwOnError === false) {
+        return;
+      }
+
+      // Don't show toast for validation errors (422) - let forms handle these
+      if (error instanceof ApiError && error.statusCode === 422) {
+        return;
+      }
+
+      // Show toast for other errors that aren't handled
+      const message = error instanceof Error ? error.message : 'An error occurred';
+      toast.error(message);
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000, // 5 minutes
@@ -23,11 +42,6 @@ export const queryClient = new QueryClient({
     },
     mutations: {
       retry: false,
-      onError: (error) => {
-        // Global error handling for mutations
-        if (error instanceof ApiError) {
-        }
-      },
     },
   },
 });

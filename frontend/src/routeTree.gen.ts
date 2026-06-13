@@ -32,11 +32,15 @@ import { Route as AuthenticatedWebhooksEndpointIdRouteImport } from './routes/_a
 import { Route as AuthenticatedUsersUserIdRouteImport } from './routes/_authenticated/users/$userId'
 import { Route as UsersUserIdPairIndexRouteImport } from './routes/users/$userId/pair.index'
 import { Route as SlSlAuthenticatedPatientsIndexRouteImport } from './routes/sl/_sl-authenticated/patients/index'
+import { Route as SlSlAuthenticatedInstructionTemplatesIndexRouteImport } from './routes/sl/_sl-authenticated/instruction-templates/index'
 import { Route as SlSlAuthenticatedCliniciansIndexRouteImport } from './routes/sl/_sl-authenticated/clinicians/index'
 import { Route as SlSlAuthenticatedAlertsIndexRouteImport } from './routes/sl/_sl-authenticated/alerts/index'
 import { Route as UsersUserIdPairSuccessRouteImport } from './routes/users/$userId/pair.success'
 import { Route as UsersUserIdPairErrorRouteImport } from './routes/users/$userId/pair.error'
+import { Route as SlSetPasswordInviteIdSecretRouteImport } from './routes/sl/set-password/$inviteId/$secret'
 import { Route as SlSlAuthenticatedPatientsPatientIdRouteImport } from './routes/sl/_sl-authenticated/patients/$patientId'
+import { Route as SlSlAuthenticatedInstructionTemplatesTemplateIdRouteImport } from './routes/sl/_sl-authenticated/instruction-templates/$templateId'
+import { Route as SlSlAuthenticatedCliniciansClinicianIdRouteImport } from './routes/sl/_sl-authenticated/clinicians/$clinicianId'
 import { Route as SlSlAuthenticatedAlertsAlertIdRouteImport } from './routes/sl/_sl-authenticated/alerts/$alertId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -158,6 +162,12 @@ const SlSlAuthenticatedPatientsIndexRoute =
     path: '/patients/',
     getParentRoute: () => SlSlAuthenticatedRoute,
   } as any)
+const SlSlAuthenticatedInstructionTemplatesIndexRoute =
+  SlSlAuthenticatedInstructionTemplatesIndexRouteImport.update({
+    id: '/instruction-templates/',
+    path: '/instruction-templates/',
+    getParentRoute: () => SlSlAuthenticatedRoute,
+  } as any)
 const SlSlAuthenticatedCliniciansIndexRoute =
   SlSlAuthenticatedCliniciansIndexRouteImport.update({
     id: '/clinicians/',
@@ -180,10 +190,28 @@ const UsersUserIdPairErrorRoute = UsersUserIdPairErrorRouteImport.update({
   path: '/error',
   getParentRoute: () => UsersUserIdPairRoute,
 } as any)
+const SlSetPasswordInviteIdSecretRoute =
+  SlSetPasswordInviteIdSecretRouteImport.update({
+    id: '/sl/set-password/$inviteId/$secret',
+    path: '/sl/set-password/$inviteId/$secret',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SlSlAuthenticatedPatientsPatientIdRoute =
   SlSlAuthenticatedPatientsPatientIdRouteImport.update({
     id: '/patients/$patientId',
     path: '/patients/$patientId',
+    getParentRoute: () => SlSlAuthenticatedRoute,
+  } as any)
+const SlSlAuthenticatedInstructionTemplatesTemplateIdRoute =
+  SlSlAuthenticatedInstructionTemplatesTemplateIdRouteImport.update({
+    id: '/instruction-templates/$templateId',
+    path: '/instruction-templates/$templateId',
+    getParentRoute: () => SlSlAuthenticatedRoute,
+  } as any)
+const SlSlAuthenticatedCliniciansClinicianIdRoute =
+  SlSlAuthenticatedCliniciansClinicianIdRouteImport.update({
+    id: '/clinicians/$clinicianId',
+    path: '/clinicians/$clinicianId',
     getParentRoute: () => SlSlAuthenticatedRoute,
   } as any)
 const SlSlAuthenticatedAlertsAlertIdRoute =
@@ -215,11 +243,15 @@ export interface FileRoutesByFullPath {
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/webhooks/': typeof AuthenticatedWebhooksIndexRoute
   '/sl/alerts/$alertId': typeof SlSlAuthenticatedAlertsAlertIdRoute
+  '/sl/clinicians/$clinicianId': typeof SlSlAuthenticatedCliniciansClinicianIdRoute
+  '/sl/instruction-templates/$templateId': typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRoute
   '/sl/patients/$patientId': typeof SlSlAuthenticatedPatientsPatientIdRoute
+  '/sl/set-password/$inviteId/$secret': typeof SlSetPasswordInviteIdSecretRoute
   '/users/$userId/pair/error': typeof UsersUserIdPairErrorRoute
   '/users/$userId/pair/success': typeof UsersUserIdPairSuccessRoute
   '/sl/alerts/': typeof SlSlAuthenticatedAlertsIndexRoute
   '/sl/clinicians/': typeof SlSlAuthenticatedCliniciansIndexRoute
+  '/sl/instruction-templates/': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/patients/': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair/': typeof UsersUserIdPairIndexRoute
 }
@@ -242,11 +274,15 @@ export interface FileRoutesByTo {
   '/users': typeof AuthenticatedUsersIndexRoute
   '/webhooks': typeof AuthenticatedWebhooksIndexRoute
   '/sl/alerts/$alertId': typeof SlSlAuthenticatedAlertsAlertIdRoute
+  '/sl/clinicians/$clinicianId': typeof SlSlAuthenticatedCliniciansClinicianIdRoute
+  '/sl/instruction-templates/$templateId': typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRoute
   '/sl/patients/$patientId': typeof SlSlAuthenticatedPatientsPatientIdRoute
+  '/sl/set-password/$inviteId/$secret': typeof SlSetPasswordInviteIdSecretRoute
   '/users/$userId/pair/error': typeof UsersUserIdPairErrorRoute
   '/users/$userId/pair/success': typeof UsersUserIdPairSuccessRoute
   '/sl/alerts': typeof SlSlAuthenticatedAlertsIndexRoute
   '/sl/clinicians': typeof SlSlAuthenticatedCliniciansIndexRoute
+  '/sl/instruction-templates': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/patients': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair': typeof UsersUserIdPairIndexRoute
 }
@@ -274,11 +310,15 @@ export interface FileRoutesById {
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/webhooks/': typeof AuthenticatedWebhooksIndexRoute
   '/sl/_sl-authenticated/alerts/$alertId': typeof SlSlAuthenticatedAlertsAlertIdRoute
+  '/sl/_sl-authenticated/clinicians/$clinicianId': typeof SlSlAuthenticatedCliniciansClinicianIdRoute
+  '/sl/_sl-authenticated/instruction-templates/$templateId': typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRoute
   '/sl/_sl-authenticated/patients/$patientId': typeof SlSlAuthenticatedPatientsPatientIdRoute
+  '/sl/set-password/$inviteId/$secret': typeof SlSetPasswordInviteIdSecretRoute
   '/users/$userId/pair/error': typeof UsersUserIdPairErrorRoute
   '/users/$userId/pair/success': typeof UsersUserIdPairSuccessRoute
   '/sl/_sl-authenticated/alerts/': typeof SlSlAuthenticatedAlertsIndexRoute
   '/sl/_sl-authenticated/clinicians/': typeof SlSlAuthenticatedCliniciansIndexRoute
+  '/sl/_sl-authenticated/instruction-templates/': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/_sl-authenticated/patients/': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair/': typeof UsersUserIdPairIndexRoute
 }
@@ -306,11 +346,15 @@ export interface FileRouteTypes {
     | '/users/'
     | '/webhooks/'
     | '/sl/alerts/$alertId'
+    | '/sl/clinicians/$clinicianId'
+    | '/sl/instruction-templates/$templateId'
     | '/sl/patients/$patientId'
+    | '/sl/set-password/$inviteId/$secret'
     | '/users/$userId/pair/error'
     | '/users/$userId/pair/success'
     | '/sl/alerts/'
     | '/sl/clinicians/'
+    | '/sl/instruction-templates/'
     | '/sl/patients/'
     | '/users/$userId/pair/'
   fileRoutesByTo: FileRoutesByTo
@@ -333,11 +377,15 @@ export interface FileRouteTypes {
     | '/users'
     | '/webhooks'
     | '/sl/alerts/$alertId'
+    | '/sl/clinicians/$clinicianId'
+    | '/sl/instruction-templates/$templateId'
     | '/sl/patients/$patientId'
+    | '/sl/set-password/$inviteId/$secret'
     | '/users/$userId/pair/error'
     | '/users/$userId/pair/success'
     | '/sl/alerts'
     | '/sl/clinicians'
+    | '/sl/instruction-templates'
     | '/sl/patients'
     | '/users/$userId/pair'
   id:
@@ -364,11 +412,15 @@ export interface FileRouteTypes {
     | '/_authenticated/users/'
     | '/_authenticated/webhooks/'
     | '/sl/_sl-authenticated/alerts/$alertId'
+    | '/sl/_sl-authenticated/clinicians/$clinicianId'
+    | '/sl/_sl-authenticated/instruction-templates/$templateId'
     | '/sl/_sl-authenticated/patients/$patientId'
+    | '/sl/set-password/$inviteId/$secret'
     | '/users/$userId/pair/error'
     | '/users/$userId/pair/success'
     | '/sl/_sl-authenticated/alerts/'
     | '/sl/_sl-authenticated/clinicians/'
+    | '/sl/_sl-authenticated/instruction-templates/'
     | '/sl/_sl-authenticated/patients/'
     | '/users/$userId/pair/'
   fileRoutesById: FileRoutesById
@@ -386,6 +438,7 @@ export interface RootRouteChildren {
   SlLoginRoute: typeof SlLoginRoute
   WidgetConnectRoute: typeof WidgetConnectRoute
   UsersUserIdPairRoute: typeof UsersUserIdPairRouteWithChildren
+  SlSetPasswordInviteIdSecretRoute: typeof SlSetPasswordInviteIdSecretRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -551,6 +604,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SlSlAuthenticatedPatientsIndexRouteImport
       parentRoute: typeof SlSlAuthenticatedRoute
     }
+    '/sl/_sl-authenticated/instruction-templates/': {
+      id: '/sl/_sl-authenticated/instruction-templates/'
+      path: '/instruction-templates'
+      fullPath: '/sl/instruction-templates/'
+      preLoaderRoute: typeof SlSlAuthenticatedInstructionTemplatesIndexRouteImport
+      parentRoute: typeof SlSlAuthenticatedRoute
+    }
     '/sl/_sl-authenticated/clinicians/': {
       id: '/sl/_sl-authenticated/clinicians/'
       path: '/clinicians'
@@ -579,11 +639,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsersUserIdPairErrorRouteImport
       parentRoute: typeof UsersUserIdPairRoute
     }
+    '/sl/set-password/$inviteId/$secret': {
+      id: '/sl/set-password/$inviteId/$secret'
+      path: '/sl/set-password/$inviteId/$secret'
+      fullPath: '/sl/set-password/$inviteId/$secret'
+      preLoaderRoute: typeof SlSetPasswordInviteIdSecretRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sl/_sl-authenticated/patients/$patientId': {
       id: '/sl/_sl-authenticated/patients/$patientId'
       path: '/patients/$patientId'
       fullPath: '/sl/patients/$patientId'
       preLoaderRoute: typeof SlSlAuthenticatedPatientsPatientIdRouteImport
+      parentRoute: typeof SlSlAuthenticatedRoute
+    }
+    '/sl/_sl-authenticated/instruction-templates/$templateId': {
+      id: '/sl/_sl-authenticated/instruction-templates/$templateId'
+      path: '/instruction-templates/$templateId'
+      fullPath: '/sl/instruction-templates/$templateId'
+      preLoaderRoute: typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRouteImport
+      parentRoute: typeof SlSlAuthenticatedRoute
+    }
+    '/sl/_sl-authenticated/clinicians/$clinicianId': {
+      id: '/sl/_sl-authenticated/clinicians/$clinicianId'
+      path: '/clinicians/$clinicianId'
+      fullPath: '/sl/clinicians/$clinicianId'
+      preLoaderRoute: typeof SlSlAuthenticatedCliniciansClinicianIdRouteImport
       parentRoute: typeof SlSlAuthenticatedRoute
     }
     '/sl/_sl-authenticated/alerts/$alertId': {
@@ -645,19 +726,28 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 interface SlSlAuthenticatedRouteChildren {
   SlSlAuthenticatedDashboardRoute: typeof SlSlAuthenticatedDashboardRoute
   SlSlAuthenticatedAlertsAlertIdRoute: typeof SlSlAuthenticatedAlertsAlertIdRoute
+  SlSlAuthenticatedCliniciansClinicianIdRoute: typeof SlSlAuthenticatedCliniciansClinicianIdRoute
+  SlSlAuthenticatedInstructionTemplatesTemplateIdRoute: typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRoute
   SlSlAuthenticatedPatientsPatientIdRoute: typeof SlSlAuthenticatedPatientsPatientIdRoute
   SlSlAuthenticatedAlertsIndexRoute: typeof SlSlAuthenticatedAlertsIndexRoute
   SlSlAuthenticatedCliniciansIndexRoute: typeof SlSlAuthenticatedCliniciansIndexRoute
+  SlSlAuthenticatedInstructionTemplatesIndexRoute: typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   SlSlAuthenticatedPatientsIndexRoute: typeof SlSlAuthenticatedPatientsIndexRoute
 }
 
 const SlSlAuthenticatedRouteChildren: SlSlAuthenticatedRouteChildren = {
   SlSlAuthenticatedDashboardRoute: SlSlAuthenticatedDashboardRoute,
   SlSlAuthenticatedAlertsAlertIdRoute: SlSlAuthenticatedAlertsAlertIdRoute,
+  SlSlAuthenticatedCliniciansClinicianIdRoute:
+    SlSlAuthenticatedCliniciansClinicianIdRoute,
+  SlSlAuthenticatedInstructionTemplatesTemplateIdRoute:
+    SlSlAuthenticatedInstructionTemplatesTemplateIdRoute,
   SlSlAuthenticatedPatientsPatientIdRoute:
     SlSlAuthenticatedPatientsPatientIdRoute,
   SlSlAuthenticatedAlertsIndexRoute: SlSlAuthenticatedAlertsIndexRoute,
   SlSlAuthenticatedCliniciansIndexRoute: SlSlAuthenticatedCliniciansIndexRoute,
+  SlSlAuthenticatedInstructionTemplatesIndexRoute:
+    SlSlAuthenticatedInstructionTemplatesIndexRoute,
   SlSlAuthenticatedPatientsIndexRoute: SlSlAuthenticatedPatientsIndexRoute,
 }
 
@@ -693,6 +783,7 @@ const rootRouteChildren: RootRouteChildren = {
   SlLoginRoute: SlLoginRoute,
   WidgetConnectRoute: WidgetConnectRoute,
   UsersUserIdPairRoute: UsersUserIdPairRouteWithChildren,
+  SlSetPasswordInviteIdSecretRoute: SlSetPasswordInviteIdSecretRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

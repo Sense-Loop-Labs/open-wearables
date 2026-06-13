@@ -3,10 +3,13 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import or_
 
 from app.database import DbSession
 from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
+from sense_loop.config import sl_settings
 from sense_loop.audit import AuditLogger, get_audit_context
+from sense_loop.models import RoleDefinition
 from sense_loop.schemas.practitioner import (
     AcceptInviteRequest,
     AcceptInviteResponse,
@@ -17,10 +20,73 @@ from sense_loop.schemas.practitioner import (
     PractitionerResponse,
     PractitionerRoleResponse,
     PractitionerUpdate,
+    RoleDefinitionResponse,
 )
 from sense_loop.services import InviteService, NotificationService, PractitionerService
 
 router = APIRouter()
+
+
+@router.get("/roles", response_model=list[RoleDefinitionResponse])
+async def list_assignable_roles(
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+    organization_id: UUID = Query(..., description="Organization to get roles for"),
+):
+    """List roles that the current user can assign when inviting clinicians.
+
+    Returns roles where:
+    - The role is active
+    - The role's privilege_level <= the current user's highest privilege level
+    - The role is either system-wide (org_id is None) or belongs to the specified org
+
+    This prevents privilege escalation - users can only assign roles at or below
+    their own level.
+    """
+    # Check that the user has permission to manage clinicians in this org
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_CLINICIANS, organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to manage clinicians in this organization",
+        )
+
+    # Get the current user's highest privilege level in this organization
+    user_max_privilege = 0
+    for role in practitioner.practitioner_roles:
+        if role.organization_id == organization_id and role.is_active:
+            if role.role_definition and role.role_definition.privilege_level > user_max_privilege:
+                user_max_privilege = role.role_definition.privilege_level
+
+    if user_max_privilege == 0:
+        # User has no active role in this org - shouldn't happen if they passed permission check
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No active role in this organization",
+        )
+
+    # Query roles:
+    # - Active roles only
+    # - Privilege level <= user's level (allows assigning same level, e.g., org_admin can create org_admin)
+    # - System-wide roles (org_id is None) OR org-specific roles for this org
+    # - Exclude super_admin (should never be assignable via invite)
+    query = (
+        db.query(RoleDefinition)
+        .filter(
+            RoleDefinition.is_active.is_(True),
+            RoleDefinition.privilege_level <= user_max_privilege,
+            RoleDefinition.code != "super_admin",
+            or_(
+                RoleDefinition.organization_id.is_(None),
+                RoleDefinition.organization_id == organization_id,
+            ),
+        )
+        .order_by(RoleDefinition.privilege_level.desc(), RoleDefinition.display_name)
+    )
+
+    return query.all()
 
 
 def _practitioner_to_response(practitioner) -> PractitionerResponse:
@@ -200,9 +266,8 @@ async def invite_clinician(
     db.commit()
 
     # Send invitation email
-    # TODO: Build proper invite URL
     notification_service = NotificationService(db)
-    invite_url = f"https://app.senselooplabs.com/set-password/{invite.id}/{invite.invite_secret}"
+    invite_url = f"{sl_settings.app_base_url}/sl/set-password/{invite.id}/{invite.invite_secret}"
 
     try:
         # Run async notification in background
@@ -264,6 +329,26 @@ async def resend_invite(
         )
 
     db.commit()
+
+    # Send invitation email
+    notification_service = NotificationService(db)
+    invite_url = f"{sl_settings.app_base_url}/sl/set-password/{invite.id}/{invite.invite_secret}"
+
+    try:
+        import asyncio
+
+        asyncio.create_task(
+            notification_service.send_invite_email(
+                invite_email=invite.email,
+                invite_name=invite.full_name,
+                organization_name=invite.organization.name,
+                invite_url=invite_url,
+            )
+        )
+    except Exception as e:
+        import logging
+
+        logging.error("Failed to send invite email: %s", e)
 
     return InviteResponse(
         success=True,

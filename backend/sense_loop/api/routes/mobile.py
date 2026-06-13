@@ -1,7 +1,8 @@
 """Mobile data endpoints for iOS app."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone as tz
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -23,6 +24,7 @@ from sense_loop.schemas.mobile import (
     RestingHRTrendPoint,
     SleepSummary,
     SleepTrendPoint,
+    SummaryRequest,
     TemperatureSummary,
     TodayActivity,
     VitalsSummary,
@@ -146,11 +148,13 @@ def _get_sleep_quality(duration_minutes: int) -> str:
 @router.post("/summary", response_model=DashboardSummaryResponse, response_model_by_alias=True)
 async def get_summary(
     db: DbSession,
+    request: SummaryRequest | None = None,
     patient=Depends(get_patient_from_token),
 ):
     """Get patient's dashboard summary.
 
     Returns data in the format expected by the iOS app.
+    Accepts optional timezone to correctly calculate "today" in user's local time.
     """
     from app.models import DataSource
     from app.models.data_point_series import DataPointSeries
@@ -159,6 +163,21 @@ async def get_summary(
     summary = patient.summary
     now = datetime.utcnow()
     seven_days_ago = now - timedelta(days=7)
+
+    # Parse user timezone for date calculations
+    user_tz = None
+    if request and request.timezone:
+        try:
+            user_tz = ZoneInfo(request.timezone)
+        except Exception:
+            pass  # Invalid timezone, fall back to UTC
+
+    # Calculate "today" in user's timezone
+    if user_tz:
+        now_local = datetime.now(user_tz)
+        today_local = now_local.date()
+    else:
+        today_local = now.date()
 
     # ==========================================================================
     # Build Vitals
@@ -441,47 +460,52 @@ async def get_summary(
     # Build Activity
     # ==========================================================================
 
-    # Today's activity
-    exercise_minutes = summary.today_active_minutes if summary else 0
-    goal_minutes = 30  # Default goal
-    progress = min(100, int((exercise_minutes or 0) / goal_minutes * 100)) if goal_minutes > 0 else 0
-
-    today_activity = TodayActivity(
-        exercise_minutes=exercise_minutes or 0,
-        goal_minutes=goal_minutes,
-        progress_percent=progress,
-        low_intensity_minutes=0,  # TODO: Calculate from data
-        moderate_intensity_minutes=exercise_minutes or 0,
-        high_intensity_minutes=0,
-    )
-
-    # Weekly trend
+    # Query workouts from event_record for accurate activity data
+    exercise_minutes = 0
     weekly_trend = []
+    daily_exercise: dict[str, float] = {}
+
     if ow_user_id:
-        # Query exercise time data for last 7 days
-        # Note: "exercise_time" is in minutes, not calories like "energy"
-        exercise_stmt = (
-            select(DataPointSeries)
-            .join(DataSource, DataPointSeries.data_source_id == DataSource.id)
-            .join(SeriesTypeDefinition, DataPointSeries.series_type_definition_id == SeriesTypeDefinition.id)
+        from app.models.event_record import EventRecord
+        from collections import defaultdict
+
+        # Query workout records for last 7 days
+        workout_stmt = (
+            select(EventRecord)
+            .join(DataSource, EventRecord.data_source_id == DataSource.id)
             .where(
                 DataSource.user_id == ow_user_id,
-                SeriesTypeDefinition.code.in_(["exercise_time", "apple_exercise_time"]),
-                DataPointSeries.recorded_at >= seven_days_ago,
+                EventRecord.category == "workout",
+                EventRecord.start_datetime >= seven_days_ago,
             )
-            .order_by(DataPointSeries.recorded_at.desc())
+            .order_by(EventRecord.start_datetime.desc())
         )
-        exercise_data = db.execute(exercise_stmt).scalars().all()
+        workout_records = db.execute(workout_stmt).scalars().all()
 
-        from collections import defaultdict
+        # Group workouts by date using user's timezone
         daily_exercise = defaultdict(float)
-        for point in exercise_data:
-            date_str = point.recorded_at.strftime("%Y-%m-%d")
-            daily_exercise[date_str] += float(point.value)
+        for workout in workout_records:
+            # Convert to user's timezone if provided
+            if user_tz:
+                workout_local = workout.start_datetime.replace(tzinfo=tz.utc).astimezone(user_tz)
+                date_str = workout_local.strftime("%Y-%m-%d")
+            else:
+                date_str = workout.start_datetime.strftime("%Y-%m-%d")
+
+            # Add duration in minutes
+            if workout.duration_seconds:
+                daily_exercise[date_str] += workout.duration_seconds / 60
+
+        # Get today's exercise minutes
+        today_str = today_local.strftime("%Y-%m-%d")
+        exercise_minutes = int(daily_exercise.get(today_str, 0))
 
         # Build weekly trend with day names
         for i in range(7):
-            day = now - timedelta(days=6-i)
+            if user_tz:
+                day = (datetime.now(user_tz) - timedelta(days=6-i)).date()
+            else:
+                day = (now - timedelta(days=6-i)).date()
             date_str = day.strftime("%Y-%m-%d")
             day_name = day.strftime("%a")  # Mon, Tue, etc.
             minutes = int(daily_exercise.get(date_str, 0))
@@ -492,6 +516,18 @@ async def get_summary(
                     exercise_minutes=minutes,
                 )
             )
+
+    goal_minutes = 30  # Default goal
+    progress = min(100, int(exercise_minutes / goal_minutes * 100)) if goal_minutes > 0 else 0
+
+    today_activity = TodayActivity(
+        exercise_minutes=exercise_minutes,
+        goal_minutes=goal_minutes,
+        progress_percent=progress,
+        low_intensity_minutes=0,  # TODO: Calculate from workout type
+        moderate_intensity_minutes=exercise_minutes,
+        high_intensity_minutes=0,
+    )
 
     activity = ActivitySummary(
         today=today_activity,
@@ -640,4 +676,323 @@ async def submit_questionnaire(
         total_score=response.total_score,
         score_interpretation=response.score_interpretation,
         message="Questionnaire submitted successfully",
+    )
+
+
+# =============================================================================
+# Task Endpoints
+# =============================================================================
+
+
+@router.get("/tasks")
+async def get_tasks(
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    target_date: date | None = None,
+    include_completed: bool = True,
+):
+    """Get tasks for a patient.
+
+    Returns tasks for the specified date (default: today).
+    """
+    from sense_loop.schemas.instruction_template import (
+        DailyTasksResponse,
+        TaskResponse,
+    )
+    from sense_loop.services import TaskCompletionService
+
+    service = TaskCompletionService(db)
+
+    if target_date is None:
+        target_date = date.today()
+
+    tasks = service.get_patient_tasks_for_date(patient.id, target_date)
+
+    # Filter completed if requested
+    if not include_completed:
+        tasks = [t for t in tasks if t.status != "completed"]
+
+    # Calculate stats
+    pending = sum(1 for t in tasks if t.status == "pending")
+    completed = sum(1 for t in tasks if t.status == "completed")
+    missed = sum(1 for t in tasks if t.status == "missed")
+
+    return DailyTasksResponse(
+        date=target_date,
+        tasks=[_task_to_response(t) for t in tasks],
+        total=len(tasks),
+        pending=pending,
+        completed=completed,
+        missed=missed,
+    )
+
+
+@router.get("/tasks/pending")
+async def get_pending_tasks(
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    include_snoozed: bool = True,
+):
+    """Get all pending tasks for a patient."""
+    from sense_loop.schemas.instruction_template import TaskListResponse
+    from sense_loop.services import TaskCompletionService
+
+    service = TaskCompletionService(db)
+    tasks = service.get_pending_tasks_for_patient(
+        patient.id,
+        include_snoozed=include_snoozed,
+    )
+
+    pending_count = sum(1 for t in tasks if t.status == "pending")
+    completed_count = 0  # These are pending only
+
+    return TaskListResponse(
+        items=[_task_to_response(t) for t in tasks],
+        total=len(tasks),
+        pending_count=pending_count,
+        completed_count=completed_count,
+    )
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(
+    task_id: UUID,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    notes: str | None = None,
+):
+    """Manually mark a task as complete."""
+    from sense_loop.models import PatientInstructionTask
+    from sense_loop.schemas.instruction_template import TaskActionResponse
+    from sense_loop.services import TaskCompletionService
+
+    # Get task
+    task = db.get(PatientInstructionTask, task_id)
+    if not task or task.patient_id != patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    if task.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot complete task with status '{task.status}'",
+        )
+
+    service = TaskCompletionService(db)
+    task = service.complete_task_manually(task, notes=notes, completed_by="user")
+    db.commit()
+
+    return TaskActionResponse(
+        success=True,
+        task_id=task.id,
+        new_status=task.status,
+        message="Task marked as complete",
+    )
+
+
+@router.post("/tasks/{task_id}/skip")
+async def skip_task(
+    task_id: UUID,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    reason: str | None = None,
+):
+    """Skip a task."""
+    from sense_loop.models import PatientInstructionTask
+    from sense_loop.schemas.instruction_template import TaskActionResponse
+    from sense_loop.services import TaskCompletionService
+
+    # Get task
+    task = db.get(PatientInstructionTask, task_id)
+    if not task or task.patient_id != patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    if task.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot skip task with status '{task.status}'",
+        )
+
+    service = TaskCompletionService(db)
+    task = service.skip_task(task, reason=reason)
+    db.commit()
+
+    return TaskActionResponse(
+        success=True,
+        task_id=task.id,
+        new_status=task.status,
+        message="Task skipped",
+    )
+
+
+@router.post("/tasks/{task_id}/snooze")
+async def snooze_task(
+    task_id: UUID,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    snooze_minutes: int = 30,
+):
+    """Snooze a task reminder."""
+    from sense_loop.models import PatientInstructionTask
+    from sense_loop.schemas.instruction_template import TaskActionResponse
+    from sense_loop.services import TaskCompletionService
+
+    # Validate snooze duration
+    if snooze_minutes < 5 or snooze_minutes > 240:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Snooze duration must be between 5 and 240 minutes",
+        )
+
+    # Get task
+    task = db.get(PatientInstructionTask, task_id)
+    if not task or task.patient_id != patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    if task.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot snooze task with status '{task.status}'",
+        )
+
+    service = TaskCompletionService(db)
+    task = service.snooze_task(task, snooze_minutes=snooze_minutes)
+    db.commit()
+
+    return TaskActionResponse(
+        success=True,
+        task_id=task.id,
+        new_status=task.status,
+        message=f"Task snoozed for {snooze_minutes} minutes",
+    )
+
+
+@router.post("/tasks/{task_id}/confirm")
+async def confirm_task(
+    task_id: UUID,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+    response: str = "yes",
+    notes: str | None = None,
+):
+    """Respond to a task confirmation notification.
+
+    Args:
+        response: One of 'yes', 'no', 'snooze'
+    """
+    from sense_loop.models import PatientInstructionTask
+    from sense_loop.schemas.instruction_template import TaskActionResponse
+    from sense_loop.services import TaskCompletionService
+
+    if response not in ("yes", "no", "snooze"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Response must be 'yes', 'no', or 'snooze'",
+        )
+
+    # Get task
+    task = db.get(PatientInstructionTask, task_id)
+    if not task or task.patient_id != patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    service = TaskCompletionService(db)
+    task = await service.handle_confirmation_response(task, response, notes=notes)
+    db.commit()
+
+    return TaskActionResponse(
+        success=True,
+        task_id=task.id,
+        new_status=task.status,
+        message=f"Confirmation response recorded: {response}",
+    )
+
+
+@router.get("/instruction-plans")
+async def get_instruction_plans(
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+):
+    """Get active instruction plans for the patient."""
+    from sense_loop.services import PatientInstructionPlanService
+
+    service = PatientInstructionPlanService(db)
+    plans = service.get_active_plans(patient.id)
+
+    return {
+        "plans": [
+            {
+                "id": str(plan.id),
+                "template_title": plan.template.title if plan.template else None,
+                "status": plan.status,
+                "effective_start": plan.effective_start.isoformat(),
+                "effective_end": plan.effective_end.isoformat() if plan.effective_end else None,
+            }
+            for plan in plans
+        ]
+    }
+
+
+@router.get("/instruction-plans/{plan_id}/content")
+async def get_instruction_plan_content(
+    plan_id: UUID,
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+):
+    """Get the full resolved content of an instruction plan."""
+    from sense_loop.services import PatientInstructionPlanService
+
+    service = PatientInstructionPlanService(db)
+    plan = service.get_by_id(plan_id)
+
+    if not plan or plan.patient_id != patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found",
+        )
+
+    content = service.get_resolved_content_with_activities(plan)
+
+    return {
+        "id": str(plan.id),
+        "template_title": plan.template.title if plan.template else None,
+        "status": plan.status,
+        "content": content,
+    }
+
+
+def _task_to_response(task):
+    """Convert task model to response schema."""
+    from sense_loop.schemas.instruction_template import TaskResponse
+
+    return TaskResponse(
+        id=task.id,
+        plan_id=task.plan_id,
+        task_type=task.task_type,
+        task_code=task.task_code,
+        title=task.title,
+        description=task.description,
+        completion_method=task.completion_method,
+        status=task.status,
+        scheduled_date=task.scheduled_date,
+        scheduled_at=task.scheduled_at,
+        scheduled_time_local=task.scheduled_time_local,
+        time_window_minutes=task.time_window_minutes,
+        confirmation_prompt=task.confirmation_prompt,
+        completed_at=task.completed_at,
+        completion_source=task.completion_source,
+        linked_data_value=task.linked_data_value,
+        user_notes=task.user_notes,
+        snoozed_until=task.snoozed_until,
+        snooze_count=task.snooze_count,
     )

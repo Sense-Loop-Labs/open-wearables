@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 import { slAuthService } from '@/lib/api/services/sense-loop.service';
 import type {
+  AcceptInviteRequest,
   ForgotPasswordRequest,
   PractitionerLoginRequest,
   ResetPasswordRequest,
@@ -100,6 +101,18 @@ export function useSlAuth() {
     },
   });
 
+  // Accept invite mutation
+  const acceptInviteMutation = useMutation({
+    mutationFn: (data: AcceptInviteRequest) => slAuthService.acceptInvite(data),
+    onSuccess: () => {
+      toast.success('Account created successfully. You can now log in.');
+      navigate({ to: '/sl/login' });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to accept invitation');
+    },
+  });
+
   return {
     // State
     practitioner,
@@ -111,11 +124,13 @@ export function useSlAuth() {
     logout: logoutMutation.mutate,
     forgotPassword: forgotPasswordMutation.mutateAsync,
     resetPassword: resetPasswordMutation.mutateAsync,
+    acceptInvite: acceptInviteMutation.mutateAsync,
 
     // Loading states
     isLoggingIn: loginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
     isSendingResetEmail: forgotPasswordMutation.isPending,
     isResettingPassword: resetPasswordMutation.isPending,
+    isAcceptingInvite: acceptInviteMutation.isPending,
   };
 }

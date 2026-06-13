@@ -148,7 +148,6 @@ class TestAlertEngineUpsertPattern:
             patch.object(engine, "_get_patient", return_value=mock_patient),
             patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
             patch.object(engine, "_find_active_alert", return_value=None),
-            patch.object(engine, "_is_in_resolution_cooldown", return_value=False),
         ):
             result = engine.evaluate_observation_detailed(
                 patient_id=mock_patient.id,
@@ -330,29 +329,6 @@ class TestAlertEngineEdgeCases:
         assert result.action == AlertAction.NONE
         assert result.reason == "No rule for vital type"
 
-    def test_resolution_cooldown_prevents_new_alert(
-        self, mock_db_session, mock_patient, mock_protocol, mock_rule
-    ):
-        """Test that recently resolved alert prevents new alert creation."""
-        engine = AlertEngine(mock_db_session)
-        mock_protocol.rules = [mock_rule]
-
-        with (
-            patch.object(engine, "_get_patient", return_value=mock_patient),
-            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
-            patch.object(engine, "_find_active_alert", return_value=None),
-            patch.object(engine, "_is_in_resolution_cooldown", return_value=True),
-        ):
-            result = engine.evaluate_observation_detailed(
-                patient_id=mock_patient.id,
-                vital_type="heart_rate",
-                value=125,
-                observed_at=datetime.utcnow(),
-            )
-
-        assert result.action == AlertAction.NONE
-        assert result.reason == "In resolution cooldown"
-
 
 class TestAlertEngineUpdateCount:
     """Tests for alert update tracking."""
@@ -479,7 +455,6 @@ class TestAlertEngineTemperatureConversion:
             patch.object(engine, "_get_patient", return_value=mock_patient),
             patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
             patch.object(engine, "_find_active_alert", return_value=None),
-            patch.object(engine, "_is_in_resolution_cooldown", return_value=False),
         ):
             result = engine.evaluate_observation_detailed(
                 patient_id=mock_patient.id,
@@ -490,3 +465,317 @@ class TestAlertEngineTemperatureConversion:
 
         # 38C = 100.4F which triggers high_warning threshold
         assert result.action == AlertAction.CREATED
+
+    def test_normal_celsius_no_alert(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that normal Celsius temperature does not trigger alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "temperature"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = 102
+        rule.high_warning = 100
+        rule.low_warning = 96
+        rule.low_critical = 94
+        rule.cooldown_minutes = 15
+        mock_protocol.rules = [rule]
+
+        # Pass 37C which should convert to ~98.6F (normal)
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=None),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="temperature",
+                value=37,  # Celsius - normal
+                observed_at=datetime.utcnow(),
+            )
+
+        # 37C = 98.6F which is normal (between 96 and 100)
+        assert result.action == AlertAction.NONE
+        assert result.reason == "No threshold breached"
+
+    def test_temperature_auto_resolve_after_normal(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that temperature alert auto-resolves when temp returns to normal."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "temperature"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = 102
+        rule.high_warning = 100
+        rule.low_warning = 96
+        rule.low_critical = 94
+        rule.cooldown_minutes = 15
+        mock_protocol.rules = [rule]
+
+        # Existing high temp alert
+        existing_alert = MagicMock()
+        existing_alert.id = uuid4()
+        existing_alert.vital_type = "temperature"
+        existing_alert.status = "active"
+        existing_alert.severity = "critical"
+        existing_alert.data = {}
+
+        # Pass 37C which should convert to ~98.6F (normal) and resolve alert
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=existing_alert),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="temperature",
+                value=37,  # Celsius - normal
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.RESOLVED
+        assert existing_alert.status == "auto_resolved"
+
+
+class TestAlertEngineLowThresholds:
+    """Tests for low threshold breaches."""
+
+    def test_low_spo2_creates_alert(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that low SpO2 creates an alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "spo2"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = None
+        rule.high_warning = None
+        rule.low_warning = 94
+        rule.low_critical = 90
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=None),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="spo2",
+                value=92,  # Below low_warning (94)
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.CREATED
+
+    def test_critical_low_spo2(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that critically low SpO2 creates critical alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "spo2"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = None
+        rule.high_warning = None
+        rule.low_warning = 94
+        rule.low_critical = 90
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=None),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="spo2",
+                value=88,  # Below low_critical (90)
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.CREATED
+        # Check the alert was created with critical severity
+        assert result.alert is not None
+
+    def test_normal_spo2_resolves_alert(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that normal SpO2 resolves existing alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "spo2"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = None
+        rule.high_warning = None
+        rule.low_warning = 94
+        rule.low_critical = 90
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        existing_alert = MagicMock()
+        existing_alert.id = uuid4()
+        existing_alert.vital_type = "spo2"
+        existing_alert.status = "active"
+        existing_alert.severity = "warning"
+        existing_alert.data = {}
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=existing_alert),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="spo2",
+                value=98,  # Normal (above 94)
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.RESOLVED
+        assert existing_alert.status == "auto_resolved"
+
+
+class TestAlertEngineBloodPressure:
+    """Tests for blood pressure alerts."""
+
+    def test_high_systolic_bp_creates_alert(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that high systolic BP creates an alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "blood_pressure_systolic"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = 180
+        rule.high_warning = 160
+        rule.low_warning = 90
+        rule.low_critical = 80
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=None),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="blood_pressure_systolic",
+                value=170,  # Above high_warning (160)
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.CREATED
+
+    def test_normal_bp_resolves_alert(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that normal BP resolves existing alert."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "blood_pressure_systolic"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = 180
+        rule.high_warning = 160
+        rule.low_warning = 90
+        rule.low_critical = 80
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        existing_alert = MagicMock()
+        existing_alert.id = uuid4()
+        existing_alert.vital_type = "blood_pressure_systolic"
+        existing_alert.status = "active"
+        existing_alert.severity = "warning"
+        existing_alert.data = {}
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=existing_alert),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="blood_pressure_systolic",
+                value=125,  # Normal (between 90 and 160)
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.RESOLVED
+        assert existing_alert.status == "auto_resolved"
+
+    def test_bp_update_not_create_duplicate(
+        self, mock_db_session, mock_patient, mock_protocol
+    ):
+        """Test that subsequent high BP updates existing alert, not creates new."""
+        engine = AlertEngine(mock_db_session)
+
+        rule = MagicMock()
+        rule.id = uuid4()
+        rule.vital_type = "blood_pressure_systolic"
+        rule.is_active = True
+        rule.context = None
+        rule.priority = 1
+        rule.high_critical = 180
+        rule.high_warning = 160
+        rule.low_warning = 90
+        rule.low_critical = 80
+        rule.cooldown_minutes = 30
+        mock_protocol.rules = [rule]
+
+        existing_alert = MagicMock()
+        existing_alert.id = uuid4()
+        existing_alert.vital_type = "blood_pressure_systolic"
+        existing_alert.status = "active"
+        existing_alert.severity = "warning"
+        existing_alert.observed_value = 165
+        existing_alert.data = {"update_count": 2}
+
+        with (
+            patch.object(engine, "_get_patient", return_value=mock_patient),
+            patch.object(engine, "_get_default_protocol", return_value=mock_protocol),
+            patch.object(engine, "_find_active_alert", return_value=existing_alert),
+        ):
+            result = engine.evaluate_observation_detailed(
+                patient_id=mock_patient.id,
+                vital_type="blood_pressure_systolic",
+                value=175,  # Still high
+                observed_at=datetime.utcnow(),
+            )
+
+        assert result.action == AlertAction.UPDATED
+        assert result.alert == existing_alert
+        assert existing_alert.data["update_count"] == 3
+        mock_db_session.add.assert_not_called()

@@ -188,6 +188,9 @@ class QuestionnaireService:
         # Check for alert triggers
         self._check_alert_triggers(response)
 
+        # Trigger task completion check for questionnaire-based tasks
+        self._trigger_task_completion(response)
+
         logger.info(
             "Submitted %d answers for response %s (score: %s)",
             len(answers),
@@ -196,6 +199,33 @@ class QuestionnaireService:
         )
 
         return response
+
+    def _trigger_task_completion(self, response: QuestionnaireResponse) -> None:
+        """Trigger task completion check for questionnaire-based tasks."""
+        try:
+            from app.integrations.celery.tasks.instruction_tasks import (
+                process_questionnaire_for_tasks,
+            )
+
+            questionnaire = response.questionnaire
+
+            process_questionnaire_for_tasks.delay(
+                patient_id=str(response.patient_id),
+                questionnaire_code=questionnaire.code if questionnaire else "unknown",
+                response_id=str(response.id),
+                submitted_at=response.completed_at.isoformat() if response.completed_at else datetime.utcnow().isoformat(),
+            )
+
+            logger.debug(
+                "Triggered task completion check for questionnaire %s",
+                response.id,
+            )
+
+        except Exception as e:
+            # Don't fail the main submission if task completion fails
+            logger.warning(
+                "Failed to trigger task completion for questionnaire: %s", str(e)
+            )
 
     def _get_question(self, question_id: UUID) -> QuestionnaireQuestion | None:
         """Get a question by ID."""

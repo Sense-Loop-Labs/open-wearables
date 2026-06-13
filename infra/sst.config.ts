@@ -297,7 +297,7 @@ export default $config({
     const api = new sst.aws.Service("Api", {
       cluster,
       cpu: isProduction ? "0.5 vCPU" : "0.25 vCPU",
-      memory: isProduction ? "1 GB" : "0.5 GB",
+      memory: "1 GB", // 1 GB for both staging (pilot) and production for stability
       image: {
         context: "../backend",
         dockerfile: "Dockerfile",
@@ -322,7 +322,7 @@ export default $config({
         command: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"],
         interval: "30 seconds",
         timeout: "5 seconds",
-        startPeriod: "3 minutes", // Allow time for initialization scripts
+        startPeriod: "5 minutes", // Allow time for initialization scripts
       },
       scaling: isProduction
         ? { min: 2, max: 10, cpuUtilization: 70 }
@@ -358,7 +358,7 @@ export default $config({
     const worker = new sst.aws.Service("Worker", {
       cluster,
       cpu: isProduction ? "0.5 vCPU" : "0.25 vCPU",
-      memory: isProduction ? "1 GB" : "0.5 GB",
+      memory: "1 GB", // 1 GB for both staging (pilot) and production for stability
       image: {
         context: "../backend",
         dockerfile: "Dockerfile",

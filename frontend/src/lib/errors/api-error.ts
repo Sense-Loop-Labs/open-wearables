@@ -39,16 +39,30 @@ export class ApiError extends Error {
 
   static fromResponse(response: Response, data?: unknown): ApiError {
     const dataObj = data as Record<string, unknown> | undefined;
-    const message =
-      (dataObj?.message as string) ||
-      (dataObj?.detail as string) ||
-      response.statusText ||
-      'An error occurred';
-    const code = dataObj?.code as ApiErrorCode | undefined;
-    const details =
-      (dataObj?.details as Record<string, unknown>) ||
-      (dataObj?.validation_errors as Record<string, unknown>);
 
+    // FastAPI returns validation errors as detail: [{loc, msg, type}, ...]
+    const detail = dataObj?.detail;
+    let message: string;
+    let details: Record<string, unknown> | undefined;
+
+    if (Array.isArray(detail)) {
+      // FastAPI validation error format - extract first message for display
+      // but keep full array in details for field-level error parsing
+      const firstError = detail[0] as { msg?: string } | undefined;
+      message = firstError?.msg || 'Validation error';
+      details = { validationErrors: detail };
+    } else {
+      message =
+        (dataObj?.message as string) ||
+        (detail as string) ||
+        response.statusText ||
+        'An error occurred';
+      details =
+        (dataObj?.details as Record<string, unknown>) ||
+        (dataObj?.validation_errors as Record<string, unknown>);
+    }
+
+    const code = dataObj?.code as ApiErrorCode | undefined;
     return new ApiError(message, response.status, code, details);
   }
 

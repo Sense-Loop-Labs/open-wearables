@@ -13,6 +13,14 @@ from .notification_service import NotificationService
 from .fhir_export_service import FHIRExportService
 from .value_set_service import ValueSetService
 
+# Instruction template services
+from .activity_template_service import ActivityTemplateService
+from .instruction_template_service import InstructionTemplateService
+from .patient_instruction_plan_service import PatientInstructionPlanService
+from .task_generation_service import TaskGenerationService, TaskGenerationConfig
+from .task_completion_service import TaskCompletionService
+from .task_notification_service import TaskNotificationService, NotificationConfig
+
 __all__ = [
     "PatientService",
     "EnrollmentService",
@@ -26,4 +34,13 @@ __all__ = [
     "NotificationService",
     "FHIRExportService",
     "ValueSetService",
+    # Instruction template services
+    "ActivityTemplateService",
+    "InstructionTemplateService",
+    "PatientInstructionPlanService",
+    "TaskGenerationService",
+    "TaskGenerationConfig",
+    "TaskCompletionService",
+    "TaskNotificationService",
+    "NotificationConfig",
 ]

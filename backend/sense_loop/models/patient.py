@@ -69,6 +69,9 @@ class Patient(BaseDbModel):
     monitoring_start_date: Mapped[date | None] = mapped_column(nullable=True)
     monitoring_end_date: Mapped[date | None] = mapped_column(nullable=True)
 
+    # Timezone (for task scheduling and notifications)
+    timezone: Mapped[str_50] = mapped_column(default="America/New_York")
+
     # Alert protocol
     alert_protocol_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("sl_alert_protocol.id", ondelete="SET NULL"),
@@ -113,6 +116,16 @@ class Patient(BaseDbModel):
         back_populates="patient",
         cascade="all, delete-orphan",
         order_by="desc(ClinicalAction.created_at)",
+    )
+    instruction_plans: Mapped[list["PatientInstructionPlan"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="desc(PatientInstructionPlan.created_at)",
+    )
+    instruction_tasks: Mapped[list["PatientInstructionTask"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="PatientInstructionTask.scheduled_at",
     )
 
     @property

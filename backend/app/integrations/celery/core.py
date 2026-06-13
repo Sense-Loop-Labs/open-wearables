@@ -148,6 +148,35 @@ def create_celery() -> Celery:
             "args": (),
             "kwargs": {},
         },
+        # SENSE-LOOP: Instruction task management
+        # generate-daily-tasks: Extends the rolling 7-day task window for all active plans
+        "sl-generate-daily-tasks": {
+            "task": "sense_loop.generate_daily_tasks",
+            "schedule": crontab(hour=2, minute=0),  # Daily at 02:00 UTC
+            "args": (),
+            "kwargs": {},
+        },
+        # process-task-notifications: Sends reminders, overdue alerts, confirmations
+        "sl-process-task-notifications": {
+            "task": "sense_loop.process_task_notifications",
+            "schedule": 300.0,  # Every 5 minutes
+            "args": (),
+            "kwargs": {},
+        },
+        # mark-overdue-tasks: Marks tasks as missed after time window expires
+        "sl-mark-overdue-tasks": {
+            "task": "sense_loop.mark_overdue_tasks",
+            "schedule": 900.0,  # Every 15 minutes
+            "args": (),
+            "kwargs": {},
+        },
+        # send-daily-task-summaries: Morning notification with today's tasks
+        "sl-send-daily-task-summaries": {
+            "task": "sense_loop.send_daily_task_summaries",
+            "schedule": crontab(hour=13, minute=0),  # 13:00 UTC = ~8 AM EST
+            "args": (),
+            "kwargs": {},
+        },
     }
 
     return celery_app

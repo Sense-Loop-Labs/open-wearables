@@ -21,10 +21,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Frontend": {
-      "type": "sst.aws.Service"
-      "url": string
-    }
     "GarminClientId": {
       "type": "sst.sst.Secret"
       "value": string

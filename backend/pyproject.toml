@@ -30,6 +30,7 @@ dependencies = [
     "faker>=40.13.0",
     "passlib>=1.7.4",  # Sense Loop: PBKDF2 password hashing
     "cedarpy>=4.8.0",  # Sense Loop: Cedar policy evaluation for fine-grained access control
+    "sendgrid>=6.11.0",  # Sense Loop: Email notifications via SendGrid
 ]
 
 [dependency-groups]

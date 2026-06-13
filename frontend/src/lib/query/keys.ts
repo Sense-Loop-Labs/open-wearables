@@ -234,7 +234,10 @@ export const queryKeys = {
       details: () => [...queryKeys.sl.clinicians.all, 'detail'] as const,
       detail: (id: string) =>
         [...queryKeys.sl.clinicians.details(), id] as const,
-      roles: () => [...queryKeys.sl.clinicians.all, 'roles'] as const,
+      roles: (orgId?: string) =>
+        [...queryKeys.sl.clinicians.all, 'roles', orgId] as const,
+      pendingInvites: (orgId?: string) =>
+        [...queryKeys.sl.clinicians.all, 'pending-invites', orgId] as const,
     },
 
     // Organizations
@@ -253,6 +256,43 @@ export const queryKeys = {
       lists: () => [...queryKeys.sl.clinicalActions.all, 'list'] as const,
       list: (patientId: string, params?: { page?: number; page_size?: number }) =>
         [...queryKeys.sl.clinicalActions.lists(), patientId, params] as const,
+    },
+
+    // Activity Templates
+    activityTemplates: {
+      all: ['sl', 'activityTemplates'] as const,
+      lists: () => [...queryKeys.sl.activityTemplates.all, 'list'] as const,
+      list: (params?: { organization_id?: string; status?: string; category?: string }) =>
+        [...queryKeys.sl.activityTemplates.lists(), params] as const,
+      details: () => [...queryKeys.sl.activityTemplates.all, 'detail'] as const,
+      detail: (id: string) =>
+        [...queryKeys.sl.activityTemplates.details(), id] as const,
+    },
+
+    // Instruction Templates
+    instructionTemplates: {
+      all: ['sl', 'instructionTemplates'] as const,
+      lists: () => [...queryKeys.sl.instructionTemplates.all, 'list'] as const,
+      list: (params?: { organization_id?: string; status?: string; health_focus?: string }) =>
+        [...queryKeys.sl.instructionTemplates.lists(), params] as const,
+      details: () => [...queryKeys.sl.instructionTemplates.all, 'detail'] as const,
+      detail: (id: string) =>
+        [...queryKeys.sl.instructionTemplates.details(), id] as const,
+      preview: (id: string) =>
+        [...queryKeys.sl.instructionTemplates.detail(id), 'preview'] as const,
+    },
+
+    // Patient Instruction Plans
+    patientPlans: {
+      all: ['sl', 'patientPlans'] as const,
+      lists: () => [...queryKeys.sl.patientPlans.all, 'list'] as const,
+      list: (patientId: string, status?: string) =>
+        [...queryKeys.sl.patientPlans.lists(), patientId, status] as const,
+      details: () => [...queryKeys.sl.patientPlans.all, 'detail'] as const,
+      detail: (patientId: string, planId: string) =>
+        [...queryKeys.sl.patientPlans.details(), patientId, planId] as const,
+      content: (patientId: string, planId: string) =>
+        [...queryKeys.sl.patientPlans.detail(patientId, planId), 'content'] as const,
     },
   },
 } as const;

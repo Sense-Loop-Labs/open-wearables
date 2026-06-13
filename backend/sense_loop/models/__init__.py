@@ -19,6 +19,13 @@ from .audit_log import AuditLog
 from .value_set import ValueSet, ValueSetItem
 from .clinical_action import ClinicalAction
 
+# Instruction template models
+from .activity_template import ActivityTemplate
+from .instruction_template import InstructionTemplate, InstructionTemplateHealthFocus
+from .patient_instruction_plan import PatientInstructionPlan
+from .patient_instruction_task import PatientInstructionTask
+from .task_notification_log import TaskNotificationLog
+
 # Cedar-based access control models
 from sense_loop.access.cedar.models import (
     AccessPolicy,
@@ -48,6 +55,13 @@ __all__ = [
     "ValueSet",
     "ValueSetItem",
     "ClinicalAction",
+    # Instruction templates
+    "ActivityTemplate",
+    "InstructionTemplate",
+    "InstructionTemplateHealthFocus",
+    "PatientInstructionPlan",
+    "PatientInstructionTask",
+    "TaskNotificationLog",
     # Cedar access control
     "AccessPolicy",
     "RoleAccessPolicy",

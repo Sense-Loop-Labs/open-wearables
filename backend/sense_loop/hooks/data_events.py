@@ -27,6 +27,7 @@ def on_timeseries_saved(
     1. Look up the SL Patient linked to this OW User
     2. If active patient with monitoring, run alert evaluation
     3. Update patient summary with latest values
+    4. Trigger task auto-completion check
 
     Args:
         db: Database session
@@ -71,6 +72,9 @@ def on_timeseries_saved(
 
     # Update patient summary with latest values
     _update_patient_summary(db, patient, vital_type, samples)
+
+    # Trigger task auto-completion check (async via Celery)
+    _trigger_task_completion(patient.id, vital_type, samples)
 
 
 def _map_series_to_vital(series_type: str) -> str | None:
@@ -159,3 +163,62 @@ def _update_patient_summary(
         value=float(value),
         timestamp=timestamp or datetime.utcnow(),
     )
+
+
+def _trigger_task_completion(
+    patient_id: UUID,
+    data_type: str,
+    samples: list[dict[str, Any]],
+) -> None:
+    """Trigger async task completion check via Celery.
+
+    Dispatches a Celery task to check if any pending instruction tasks
+    can be auto-completed by this incoming data.
+    """
+    if not samples:
+        return
+
+    # Get the latest sample for task completion
+    latest = max(samples, key=lambda s: s.get("timestamp", ""))
+    value = latest.get("value")
+    timestamp = latest.get("timestamp")
+
+    if value is None:
+        return
+
+    # For blood pressure, we need both systolic and diastolic
+    # Build a dict if this is a BP reading
+    if data_type in ("blood_pressure_systolic", "blood_pressure_diastolic"):
+        # Store value for later pairing - for now, just pass the individual value
+        data_value = {"systolic" if "systolic" in data_type else "diastolic": value}
+        data_type = "blood_pressure"
+    else:
+        data_value = value
+
+    try:
+        from app.integrations.celery.tasks.instruction_tasks import process_data_for_tasks
+        from uuid import uuid4
+
+        # Generate a pseudo data_id for linking
+        # In a real implementation, this would be the actual data record ID
+        data_id = str(uuid4())
+
+        process_data_for_tasks.delay(
+            patient_id=str(patient_id),
+            data_type=data_type,
+            data_id=data_id,
+            data_value=data_value,
+            timestamp=timestamp if isinstance(timestamp, str) else timestamp.isoformat() if timestamp else datetime.utcnow().isoformat(),
+        )
+
+        logger.debug(
+            "Triggered task completion check for patient %s with %s data",
+            patient_id,
+            data_type,
+        )
+
+    except Exception as e:
+        # Don't fail the main data processing if task completion fails
+        logger.warning(
+            "Failed to trigger task completion check: %s", str(e)
+        )

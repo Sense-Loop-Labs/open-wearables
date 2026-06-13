@@ -6,6 +6,10 @@
 import { slApiClient, slPublicApiClient } from '../sl-client';
 import type {
   AcceptInviteRequest,
+  ActivityTemplate,
+  ActivityTemplateCreate,
+  ActivityTemplateQueryParams,
+  ActivityTemplateUpdate,
   Alert,
   AlertAcknowledgeRequest,
   AlertQueryParams,
@@ -17,16 +21,27 @@ import type {
   CriticalPatient,
   DashboardOverview,
   ForgotPasswordRequest,
+  InstructionTemplate,
+  InstructionTemplateCreate,
+  InstructionTemplatePreview,
+  InstructionTemplateQueryParams,
+  InstructionTemplateUpdate,
   InviteClinicianRequest,
   Organization,
   OrganizationCreate,
   OrganizationUpdate,
+  PaginatedActivityTemplates,
   PaginatedAlerts,
   PaginatedClinicalActions,
   PaginatedClinicians,
+  PaginatedInstructionTemplates,
+  PaginatedPatientPlans,
   PaginatedPatients,
   Patient,
   PatientCreate,
+  PatientInstructionPlan,
+  PatientPlanAssign,
+  PatientPlanUpdate,
   PatientQueryParams,
   PatientUpdate,
   PractitionerInvite,
@@ -67,8 +82,9 @@ export const slAuthService = {
   },
 
   async acceptInvite(data: AcceptInviteRequest): Promise<{ success: boolean; message: string }> {
-    return slPublicApiClient.post(`${SL_BASE}/clinicians/invites/${data.invite_id}/accept`, {
-      secret: data.secret,
+    return slPublicApiClient.post(`${SL_BASE}/clinicians/invites/accept`, {
+      invite_id: data.invite_id,
+      invite_secret: data.invite_secret,
       password: data.password,
       password_confirm: data.password_confirm,
     });
@@ -198,6 +214,21 @@ export const slCliniciansService = {
     });
   },
 
+  async getPendingInvites(organizationId: string): Promise<PractitionerInvite[]> {
+    return slApiClient.request<PractitionerInvite[]>(`${SL_BASE}/clinicians/invites`, {
+      method: 'GET',
+      params: { organization_id: organizationId },
+    });
+  },
+
+  async resendInvite(inviteId: string): Promise<{ success: boolean; message: string }> {
+    return slApiClient.post(`${SL_BASE}/clinicians/invites/${inviteId}/resend`);
+  },
+
+  async revokeInvite(inviteId: string): Promise<{ success: boolean; message: string }> {
+    return slApiClient.post(`${SL_BASE}/clinicians/invites/${inviteId}/revoke`);
+  },
+
   async getById(id: string): Promise<PractitionerWithRoles> {
     return slApiClient.request<PractitionerWithRoles>(`${SL_BASE}/clinicians/${id}`, {
       method: 'GET',
@@ -214,12 +245,27 @@ export const slCliniciansService = {
     });
   },
 
-  async deactivate(id: string): Promise<{ success: boolean }> {
-    return slApiClient.post(`${SL_BASE}/clinicians/${id}/deactivate`);
+  async deactivate(id: string, organizationId: string): Promise<{ success: boolean }> {
+    return slApiClient.post(`${SL_BASE}/clinicians/${id}/deactivate`, undefined, {
+      params: { organization_id: organizationId },
+    });
   },
 
-  async getRoles(): Promise<RoleDefinition[]> {
-    return slApiClient.request<RoleDefinition[]>(`${SL_BASE}/roles`, { method: 'GET' });
+  async update(
+    id: string,
+    data: { first_name?: string; last_name?: string; phone?: string; npi_number?: string; credentials?: string },
+    organizationId: string
+  ): Promise<PractitionerWithRoles> {
+    return slApiClient.patch<PractitionerWithRoles>(`${SL_BASE}/clinicians/${id}`, data, {
+      params: { organization_id: organizationId },
+    });
+  },
+
+  async getRoles(organizationId: string): Promise<RoleDefinition[]> {
+    return slApiClient.request<RoleDefinition[]>(`${SL_BASE}/clinicians/roles`, {
+      method: 'GET',
+      params: { organization_id: organizationId },
+    });
   },
 };
 
@@ -301,6 +347,192 @@ export const slClinicalActionsService = {
   },
 };
 
+// ============================================================================
+// Activity Templates
+// ============================================================================
+
+export const slActivityTemplatesService = {
+  async getAll(params?: ActivityTemplateQueryParams): Promise<PaginatedActivityTemplates> {
+    return slApiClient.request<PaginatedActivityTemplates>(
+      `${SL_BASE}/instruction-templates/activities`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getById(id: string): Promise<ActivityTemplate> {
+    return slApiClient.request<ActivityTemplate>(
+      `${SL_BASE}/instruction-templates/activities/${id}`,
+      { method: 'GET' }
+    );
+  },
+
+  async create(data: ActivityTemplateCreate): Promise<ActivityTemplate> {
+    return slApiClient.post<ActivityTemplate>(
+      `${SL_BASE}/instruction-templates/activities`,
+      data
+    );
+  },
+
+  async update(id: string, data: ActivityTemplateUpdate): Promise<ActivityTemplate> {
+    return slApiClient.patch<ActivityTemplate>(
+      `${SL_BASE}/instruction-templates/activities/${id}`,
+      data
+    );
+  },
+
+  async activate(id: string): Promise<ActivityTemplate> {
+    return slApiClient.post<ActivityTemplate>(
+      `${SL_BASE}/instruction-templates/activities/${id}/activate`
+    );
+  },
+
+  async retire(id: string): Promise<ActivityTemplate> {
+    return slApiClient.post<ActivityTemplate>(
+      `${SL_BASE}/instruction-templates/activities/${id}/retire`
+    );
+  },
+};
+
+// ============================================================================
+// Instruction Templates
+// ============================================================================
+
+export const slInstructionTemplatesService = {
+  async getAll(params?: InstructionTemplateQueryParams): Promise<PaginatedInstructionTemplates> {
+    return slApiClient.request<PaginatedInstructionTemplates>(
+      `${SL_BASE}/instruction-templates`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getById(id: string): Promise<InstructionTemplate> {
+    return slApiClient.request<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates/${id}`,
+      { method: 'GET' }
+    );
+  },
+
+  async getPreview(id: string): Promise<InstructionTemplatePreview> {
+    return slApiClient.request<InstructionTemplatePreview>(
+      `${SL_BASE}/instruction-templates/${id}/preview`,
+      { method: 'GET' }
+    );
+  },
+
+  async create(data: InstructionTemplateCreate): Promise<InstructionTemplate> {
+    return slApiClient.post<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates`,
+      data
+    );
+  },
+
+  async update(id: string, data: InstructionTemplateUpdate): Promise<InstructionTemplate> {
+    return slApiClient.patch<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates/${id}`,
+      data
+    );
+  },
+
+  async activate(id: string): Promise<InstructionTemplate> {
+    return slApiClient.post<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates/${id}/activate`
+    );
+  },
+
+  async retire(id: string): Promise<InstructionTemplate> {
+    return slApiClient.post<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates/${id}/retire`
+    );
+  },
+
+  async duplicate(
+    id: string,
+    params?: { to_organization_id?: string; new_title?: string }
+  ): Promise<InstructionTemplate> {
+    return slApiClient.post<InstructionTemplate>(
+      `${SL_BASE}/instruction-templates/${id}/duplicate`,
+      undefined,
+      { params }
+    );
+  },
+};
+
+// ============================================================================
+// Patient Instruction Plans
+// ============================================================================
+
+export const slPatientPlansService = {
+  async getAll(patientId: string, status?: string): Promise<PaginatedPatientPlans> {
+    const params = status ? { status } : undefined;
+    return slApiClient.request<PaginatedPatientPlans>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans`,
+      {
+        method: 'GET',
+        params,
+      }
+    );
+  },
+
+  async getById(patientId: string, planId: string): Promise<PatientInstructionPlan> {
+    return slApiClient.request<PatientInstructionPlan>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans/${planId}`,
+      { method: 'GET' }
+    );
+  },
+
+  async getContent(
+    patientId: string,
+    planId: string
+  ): Promise<{ id: string; patient_id: string; template_title: string; status: string; content: Record<string, unknown> }> {
+    return slApiClient.request(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans/${planId}/content`,
+      { method: 'GET' }
+    );
+  },
+
+  async assign(patientId: string, data: PatientPlanAssign): Promise<PatientInstructionPlan> {
+    return slApiClient.post<PatientInstructionPlan>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans`,
+      data
+    );
+  },
+
+  async update(
+    patientId: string,
+    planId: string,
+    data: PatientPlanUpdate
+  ): Promise<PatientInstructionPlan> {
+    return slApiClient.patch<PatientInstructionPlan>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans/${planId}`,
+      data
+    );
+  },
+
+  async complete(patientId: string, planId: string): Promise<PatientInstructionPlan> {
+    return slApiClient.post<PatientInstructionPlan>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans/${planId}/complete`
+    );
+  },
+
+  async cancel(
+    patientId: string,
+    planId: string,
+    cancelPendingTasks = true
+  ): Promise<PatientInstructionPlan> {
+    return slApiClient.post<PatientInstructionPlan>(
+      `${SL_BASE}/instruction-templates/patients/${patientId}/plans/${planId}/cancel`,
+      undefined,
+      { params: { cancel_pending_tasks: cancelPendingTasks } }
+    );
+  },
+};
+
 // Combined export for convenience
 export const slService = {
   auth: slAuthService,
@@ -311,4 +543,7 @@ export const slService = {
   organizations: slOrganizationsService,
   valueSets: slValueSetsService,
   clinicalActions: slClinicalActionsService,
+  activityTemplates: slActivityTemplatesService,
+  instructionTemplates: slInstructionTemplatesService,
+  patientPlans: slPatientPlansService,
 };
