@@ -83,9 +83,15 @@ def process_task_notifications(self) -> dict:
 
     db = SessionLocal()
     try:
-        from sense_loop.services import TaskNotificationService
+        from sense_loop.services import ConfigService, TaskNotificationService, NotificationService
 
-        service = TaskNotificationService(db)
+        # Check if notifications are enabled (checked on each invocation)
+        config_service = ConfigService(db)
+        if not config_service.are_notifications_enabled():
+            return {"skipped": True, "reason": "notifications_disabled"}
+
+        notification_service = NotificationService(db)
+        service = TaskNotificationService(db, notification_service=notification_service)
 
         import asyncio
         loop = asyncio.new_event_loop()

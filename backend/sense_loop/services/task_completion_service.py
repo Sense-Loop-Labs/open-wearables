@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
@@ -71,7 +71,7 @@ class TaskCompletionService:
             task.linked_data_type = "data_point_series"
             task.linked_data_id = data_id
             task.linked_data_value = self._format_data_value(data_type, data_value)
-            task.updated_at = datetime.utcnow()
+            task.updated_at = datetime.now(timezone.utc)
 
             completed_tasks.append(task)
 
@@ -125,7 +125,7 @@ class TaskCompletionService:
             task.linked_data_type = "questionnaire_response"
             task.linked_data_id = response_id
             task.linked_data_value = f"Questionnaire: {questionnaire_code}"
-            task.updated_at = datetime.utcnow()
+            task.updated_at = datetime.now(timezone.utc)
 
             completed_tasks.append(task)
 
@@ -156,10 +156,10 @@ class TaskCompletionService:
             Updated task
         """
         task.status = "completed"
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(timezone.utc)
         task.completion_source = f"{completed_by}_confirmed"
         task.user_notes = notes
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
 
         self.db.flush()
 
@@ -183,7 +183,7 @@ class TaskCompletionService:
         """
         task.status = "skipped"
         task.skip_reason = reason
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
 
         self.db.flush()
 
@@ -205,9 +205,9 @@ class TaskCompletionService:
         Returns:
             Updated task
         """
-        task.snoozed_until = datetime.utcnow() + timedelta(minutes=snooze_minutes)
+        task.snoozed_until = datetime.now(timezone.utc) + timedelta(minutes=snooze_minutes)
         task.snooze_count += 1
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now(timezone.utc)
 
         self.db.flush()
 
@@ -251,7 +251,7 @@ class TaskCompletionService:
         Returns:
             Number of tasks marked as missed
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         today = date.today()
 
         # Find pending tasks that are past their window
@@ -314,7 +314,7 @@ class TaskCompletionService:
             conditions.append(
                 or_(
                     PatientInstructionTask.snoozed_until.is_(None),
-                    PatientInstructionTask.snoozed_until <= datetime.utcnow(),
+                    PatientInstructionTask.snoozed_until <= datetime.now(timezone.utc),
                 )
             )
 

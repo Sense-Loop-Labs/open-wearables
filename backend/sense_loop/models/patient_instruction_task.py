@@ -1,6 +1,6 @@
 """Patient Instruction Task model - individual task instances for patients."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -142,14 +142,14 @@ class PatientInstructionTask(BaseDbModel):
         from datetime import timedelta
 
         window_end = self.scheduled_at + timedelta(minutes=self.time_window_minutes)
-        return datetime.utcnow() > window_end
+        return datetime.now(timezone.utc) > window_end
 
     @property
     def is_snoozed(self) -> bool:
         """Check if task is currently snoozed."""
         if not self.snoozed_until:
             return False
-        return datetime.utcnow() < self.snoozed_until
+        return datetime.now(timezone.utc) < self.snoozed_until
 
     @property
     def can_auto_complete(self) -> bool:

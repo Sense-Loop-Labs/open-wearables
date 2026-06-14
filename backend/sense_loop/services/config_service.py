@@ -11,6 +11,7 @@ from sense_loop.models import SystemConfig
 # Default settings
 DEFAULTS = {
     "notifications": {
+        "enabled": True,
         "patient_reminder_channel": "email",
         "care_team_alert_channel": "email",
         "quiet_hours_enabled": False,
@@ -140,6 +141,23 @@ class ConfigService:
             "notifications.care_team_alert_channel",
             organization_id,
             default="email",
+        )
+
+    def are_notifications_enabled(
+        self, organization_id: UUID | None = None
+    ) -> bool:
+        """Check if notifications are enabled.
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            True if notifications are enabled, False otherwise
+        """
+        return self.get(
+            "notifications.enabled",
+            organization_id,
+            default=True,
         )
 
     def _get_default(self, key: str):

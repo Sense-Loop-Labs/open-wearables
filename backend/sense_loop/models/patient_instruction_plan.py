@@ -1,6 +1,6 @@
 """Patient Instruction Plan model - links patients to instruction templates."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -121,7 +121,7 @@ class PatientInstructionPlan(BaseDbModel):
         """Check if plan is currently active."""
         if self.status != "active":
             return False
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if now < self.effective_start:
             return False
         if self.effective_end and now > self.effective_end:
@@ -133,4 +133,4 @@ class PatientInstructionPlan(BaseDbModel):
         """Calculate days since plan became active."""
         if not self.effective_start:
             return None
-        return (datetime.utcnow() - self.effective_start).days
+        return (datetime.now(timezone.utc) - self.effective_start).days

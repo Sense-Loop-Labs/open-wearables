@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -58,7 +58,7 @@ class TaskNotificationService:
         Returns:
             Summary of notifications sent
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         summary = {
             "reminders_sent": 0,
             "overdue_sent": 0,
@@ -106,7 +106,7 @@ class TaskNotificationService:
             return None
 
         # Check if snoozed
-        if task.snoozed_until and task.snoozed_until > datetime.utcnow():
+        if task.snoozed_until and task.snoozed_until > datetime.now(timezone.utc):
             logger.debug("Task %s is snoozed until %s", task.id, task.snoozed_until)
             return None
 
@@ -320,7 +320,7 @@ class TaskNotificationService:
             channel=channel,
             title=title,
             body=body,
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(timezone.utc),
         )
         self.db.add(log)
         self.db.flush()
@@ -347,7 +347,7 @@ class TaskNotificationService:
             Updated notification log
         """
         notification_log.response = response
-        notification_log.responded_at = datetime.utcnow()
+        notification_log.responded_at = datetime.now(timezone.utc)
         self.db.flush()
 
         logger.info(
@@ -467,7 +467,7 @@ class TaskNotificationService:
             channel=channel,
             title=title,
             body=body,
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(timezone.utc),
         )
         self.db.add(log)
         self.db.flush()
