@@ -42,6 +42,7 @@ import { Route as SlSlAuthenticatedPatientsPatientIdRouteImport } from './routes
 import { Route as SlSlAuthenticatedInstructionTemplatesTemplateIdRouteImport } from './routes/sl/_sl-authenticated/instruction-templates/$templateId'
 import { Route as SlSlAuthenticatedCliniciansClinicianIdRouteImport } from './routes/sl/_sl-authenticated/clinicians/$clinicianId'
 import { Route as SlSlAuthenticatedAlertsAlertIdRouteImport } from './routes/sl/_sl-authenticated/alerts/$alertId'
+import { Route as SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRouteImport } from './routes/sl/_sl-authenticated/instruction-templates/questionnaires.$questionnaireId'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -220,6 +221,14 @@ const SlSlAuthenticatedAlertsAlertIdRoute =
     path: '/alerts/$alertId',
     getParentRoute: () => SlSlAuthenticatedRoute,
   } as any)
+const SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute =
+  SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRouteImport.update(
+    {
+      id: '/instruction-templates/questionnaires/$questionnaireId',
+      path: '/instruction-templates/questionnaires/$questionnaireId',
+      getParentRoute: () => SlSlAuthenticatedRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -254,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/sl/instruction-templates/': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/patients/': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair/': typeof UsersUserIdPairIndexRoute
+  '/sl/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -285,6 +295,7 @@ export interface FileRoutesByTo {
   '/sl/instruction-templates': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/patients': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair': typeof UsersUserIdPairIndexRoute
+  '/sl/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -321,6 +332,7 @@ export interface FileRoutesById {
   '/sl/_sl-authenticated/instruction-templates/': typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   '/sl/_sl-authenticated/patients/': typeof SlSlAuthenticatedPatientsIndexRoute
   '/users/$userId/pair/': typeof UsersUserIdPairIndexRoute
+  '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -357,6 +369,7 @@ export interface FileRouteTypes {
     | '/sl/instruction-templates/'
     | '/sl/patients/'
     | '/users/$userId/pair/'
+    | '/sl/instruction-templates/questionnaires/$questionnaireId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -388,6 +401,7 @@ export interface FileRouteTypes {
     | '/sl/instruction-templates'
     | '/sl/patients'
     | '/users/$userId/pair'
+    | '/sl/instruction-templates/questionnaires/$questionnaireId'
   id:
     | '__root__'
     | '/'
@@ -423,6 +437,7 @@ export interface FileRouteTypes {
     | '/sl/_sl-authenticated/instruction-templates/'
     | '/sl/_sl-authenticated/patients/'
     | '/users/$userId/pair/'
+    | '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -674,6 +689,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SlSlAuthenticatedAlertsAlertIdRouteImport
       parentRoute: typeof SlSlAuthenticatedRoute
     }
+    '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId': {
+      id: '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId'
+      path: '/instruction-templates/questionnaires/$questionnaireId'
+      fullPath: '/sl/instruction-templates/questionnaires/$questionnaireId'
+      preLoaderRoute: typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRouteImport
+      parentRoute: typeof SlSlAuthenticatedRoute
+    }
   }
 }
 
@@ -733,6 +755,7 @@ interface SlSlAuthenticatedRouteChildren {
   SlSlAuthenticatedCliniciansIndexRoute: typeof SlSlAuthenticatedCliniciansIndexRoute
   SlSlAuthenticatedInstructionTemplatesIndexRoute: typeof SlSlAuthenticatedInstructionTemplatesIndexRoute
   SlSlAuthenticatedPatientsIndexRoute: typeof SlSlAuthenticatedPatientsIndexRoute
+  SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute: typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
 }
 
 const SlSlAuthenticatedRouteChildren: SlSlAuthenticatedRouteChildren = {
@@ -749,6 +772,8 @@ const SlSlAuthenticatedRouteChildren: SlSlAuthenticatedRouteChildren = {
   SlSlAuthenticatedInstructionTemplatesIndexRoute:
     SlSlAuthenticatedInstructionTemplatesIndexRoute,
   SlSlAuthenticatedPatientsIndexRoute: SlSlAuthenticatedPatientsIndexRoute,
+  SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute:
+    SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute,
 }
 
 const SlSlAuthenticatedRouteWithChildren =

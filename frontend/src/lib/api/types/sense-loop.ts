@@ -764,3 +764,180 @@ export type PaginatedPatientPlans = {
   items: PatientInstructionPlan[];
   total: number;
 };
+
+// ============================================================================
+// Questionnaire Templates
+// ============================================================================
+
+export interface QuestionOption {
+  value: string;
+  label: string;
+  score?: number;
+}
+
+export interface QuestionAlertConfig {
+  trigger_values: string[];
+  alert_severity: 'info' | 'warning' | 'critical';
+  alert_message?: string;
+  severity_by_value?: Record<string, 'info' | 'warning' | 'critical'>;
+}
+
+export interface QuestionValidation {
+  min?: number;
+  max?: number;
+  min_length?: number;
+  max_length?: number;
+  pattern?: string;
+}
+
+export interface QuestionCondition {
+  question_code: string;
+  operator: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains';
+  value: unknown;
+}
+
+export interface QuestionnaireQuestion {
+  id: string;
+  questionnaire_id: string;
+  code: string;
+  text: string;
+  help_text?: string;
+  question_type: 'boolean' | 'single_choice' | 'multi_choice' | 'text' | 'number' | 'scale';
+  order: number;
+  is_required: boolean;
+  validation?: QuestionValidation;
+  options?: QuestionOption[];
+  condition?: QuestionCondition;
+  score_weight?: number;
+  alert_config?: QuestionAlertConfig;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ScoringRange {
+  min: number;
+  max: number;
+  label: string;
+  severity: 'info' | 'warning' | 'critical';
+}
+
+export interface ScoringConfig {
+  method: 'sum' | 'average' | 'weighted';
+  ranges: ScoringRange[];
+}
+
+export interface QuestionnaireTemplate {
+  id: string;
+  organization_id: string | null;
+  title: string;
+  code: string;
+  description: string | null;
+  questionnaire_type: 'daily' | 'weekly' | 'on_demand' | 'triggered';
+  category: 'symptom' | 'pain' | 'mood' | 'activity' | 'medication';
+  estimated_minutes: number | null;
+  allow_skip: boolean;
+  require_completion: boolean;
+  has_scoring: boolean;
+  scoring_config: ScoringConfig | null;
+  is_active: boolean;
+  version: number;
+  question_count: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface QuestionnaireTemplateDetail extends QuestionnaireTemplate {
+  questions: QuestionnaireQuestion[];
+}
+
+export interface QuestionnaireCreate {
+  title: string;
+  code: string;
+  description?: string;
+  organization_id?: string;
+  questionnaire_type?: string;
+  category?: string;
+  estimated_minutes?: number;
+  allow_skip?: boolean;
+  require_completion?: boolean;
+  has_scoring?: boolean;
+  scoring_config?: ScoringConfig;
+  questions?: QuestionCreate[];
+}
+
+export interface QuestionnaireUpdate {
+  title?: string;
+  code?: string;
+  description?: string;
+  questionnaire_type?: string;
+  category?: string;
+  estimated_minutes?: number;
+  allow_skip?: boolean;
+  require_completion?: boolean;
+  has_scoring?: boolean;
+  scoring_config?: ScoringConfig;
+  is_active?: boolean;
+}
+
+export interface QuestionCreate {
+  code: string;
+  text: string;
+  help_text?: string;
+  question_type: string;
+  order?: number;
+  is_required?: boolean;
+  validation?: QuestionValidation;
+  options?: QuestionOption[];
+  condition?: QuestionCondition;
+  score_weight?: number;
+  alert_config?: QuestionAlertConfig;
+}
+
+export interface QuestionUpdate {
+  code?: string;
+  text?: string;
+  help_text?: string;
+  question_type?: string;
+  order?: number;
+  is_required?: boolean;
+  validation?: QuestionValidation;
+  options?: QuestionOption[];
+  condition?: QuestionCondition;
+  score_weight?: number;
+  alert_config?: QuestionAlertConfig;
+  is_active?: boolean;
+}
+
+export interface QuestionnaireQueryParams {
+  organization_id?: string;
+  include_shared?: boolean;
+  is_active?: boolean;
+  questionnaire_type?: string;
+  category?: string;
+}
+
+export type PaginatedQuestionnaires = {
+  items: QuestionnaireTemplate[];
+  total: number;
+};
+
+// Patient Questionnaire Assignment
+export interface QuestionnaireAssignRequest {
+  questionnaire_id: string;
+}
+
+export interface PatientQuestionnaire {
+  id: string;
+  patient_id: string;
+  questionnaire_id: string;
+  questionnaire_title: string;
+  status: string;
+  created_at: string;
+  due_at?: string;
+}
+
+export interface PatientQuestionnaireList {
+  items: PatientQuestionnaire[];
+  total: number;
+}

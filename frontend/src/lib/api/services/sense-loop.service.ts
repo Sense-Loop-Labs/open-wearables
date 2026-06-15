@@ -37,6 +37,7 @@ import type {
   PaginatedInstructionTemplates,
   PaginatedPatientPlans,
   PaginatedPatients,
+  PaginatedQuestionnaires,
   Patient,
   PatientCreate,
   PatientInstructionPlan,
@@ -48,6 +49,14 @@ import type {
   PractitionerLoginRequest,
   PractitionerLoginResponse,
   PractitionerWithRoles,
+  QuestionCreate,
+  QuestionnaireCreate,
+  QuestionnaireQueryParams,
+  QuestionnaireQuestion,
+  QuestionnaireTemplate,
+  QuestionnaireTemplateDetail,
+  QuestionnaireUpdate,
+  QuestionUpdate,
   RecentAlert,
   ResetPasswordRequest,
   RoleDefinition,
@@ -55,6 +64,8 @@ import type {
   ValueSetItem,
   VitalsHistoryResponse,
   VitalsQueryParams,
+  PatientQuestionnaire,
+  PatientQuestionnaireList,
 } from '../types/sense-loop';
 
 const SL_BASE = '/api/v1/sl';
@@ -542,6 +553,124 @@ export const slPatientPlansService = {
   },
 };
 
+// ============================================================================
+// Questionnaire Templates
+// ============================================================================
+
+export const slQuestionnairesService = {
+  async getAll(params?: QuestionnaireQueryParams): Promise<PaginatedQuestionnaires> {
+    return slApiClient.request<PaginatedQuestionnaires>(
+      `${SL_BASE}/questionnaires`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getById(id: string): Promise<QuestionnaireTemplateDetail> {
+    return slApiClient.request<QuestionnaireTemplateDetail>(
+      `${SL_BASE}/questionnaires/${id}`,
+      { method: 'GET' }
+    );
+  },
+
+  async create(data: QuestionnaireCreate): Promise<QuestionnaireTemplateDetail> {
+    return slApiClient.post<QuestionnaireTemplateDetail>(
+      `${SL_BASE}/questionnaires`,
+      data
+    );
+  },
+
+  async update(id: string, data: QuestionnaireUpdate): Promise<QuestionnaireTemplateDetail> {
+    return slApiClient.patch<QuestionnaireTemplateDetail>(
+      `${SL_BASE}/questionnaires/${id}`,
+      data
+    );
+  },
+
+  async activate(id: string): Promise<QuestionnaireTemplate> {
+    return slApiClient.post<QuestionnaireTemplate>(
+      `${SL_BASE}/questionnaires/${id}/activate`
+    );
+  },
+
+  async retire(id: string): Promise<QuestionnaireTemplate> {
+    return slApiClient.post<QuestionnaireTemplate>(
+      `${SL_BASE}/questionnaires/${id}/retire`
+    );
+  },
+
+  async duplicate(
+    id: string,
+    params?: { to_organization_id?: string; new_title?: string; new_code?: string }
+  ): Promise<QuestionnaireTemplateDetail> {
+    return slApiClient.post<QuestionnaireTemplateDetail>(
+      `${SL_BASE}/questionnaires/${id}/duplicate`,
+      undefined,
+      { params }
+    );
+  },
+
+  async addQuestion(questionnaireId: string, data: QuestionCreate): Promise<QuestionnaireQuestion> {
+    return slApiClient.post<QuestionnaireQuestion>(
+      `${SL_BASE}/questionnaires/${questionnaireId}/questions`,
+      data
+    );
+  },
+
+  async updateQuestion(
+    questionnaireId: string,
+    questionId: string,
+    data: QuestionUpdate
+  ): Promise<QuestionnaireQuestion> {
+    return slApiClient.patch<QuestionnaireQuestion>(
+      `${SL_BASE}/questionnaires/${questionnaireId}/questions/${questionId}`,
+      data
+    );
+  },
+
+  async deleteQuestion(questionnaireId: string, questionId: string): Promise<void> {
+    return slApiClient.delete(
+      `${SL_BASE}/questionnaires/${questionnaireId}/questions/${questionId}`
+    );
+  },
+
+  async reorderQuestions(
+    questionnaireId: string,
+    questions: Array<{ question_id: string; order: number }>
+  ): Promise<QuestionnaireTemplateDetail> {
+    return slApiClient.post<QuestionnaireTemplateDetail>(
+      `${SL_BASE}/questionnaires/${questionnaireId}/questions/reorder`,
+      { questions }
+    );
+  },
+
+  // Patient questionnaire assignment
+  async assignToPatient(
+    patientId: string,
+    questionnaireId: string
+  ): Promise<PatientQuestionnaire> {
+    return slApiClient.post<PatientQuestionnaire>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/assign`,
+      { questionnaire_id: questionnaireId }
+    );
+  },
+
+  async getPatientQuestionnaires(
+    patientId: string,
+    status?: string
+  ): Promise<PatientQuestionnaireList> {
+    return slApiClient.request<PatientQuestionnaireList>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/assignments`,
+      {
+        method: 'GET',
+        params: status ? { status } : undefined,
+      }
+    );
+  },
+};
+
 // Combined export for convenience
 export const slService = {
   auth: slAuthService,
@@ -555,4 +684,5 @@ export const slService = {
   activityTemplates: slActivityTemplatesService,
   instructionTemplates: slInstructionTemplatesService,
   patientPlans: slPatientPlansService,
+  questionnaires: slQuestionnairesService,
 };

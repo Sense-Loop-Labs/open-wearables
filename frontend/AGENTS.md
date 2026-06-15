@@ -425,6 +425,72 @@ import { cn } from '@/lib/utils';
 <div className={cn('base-class', isActive && 'active-class')} />
 ```
 
+### Text Color Guidelines
+
+**Always use explicit Tailwind colors for text, not CSS variables.** CSS variables like `text-foreground`, `text-primary`, or `var(--sl-text-*)` may not resolve correctly in all contexts (dialogs, popovers, portals, etc.), causing invisible or hard-to-read text.
+
+```typescript
+// GOOD - explicit colors, always visible
+className="text-gray-700"
+className="text-gray-900"
+className="text-gray-500"
+className="placeholder:text-gray-400"
+
+// BAD - may not resolve in dialogs/portals
+className="text-foreground"
+className="text-[var(--sl-text-primary)]"
+```
+
+This applies to:
+- Labels (`text-gray-700`)
+- Input text (`text-gray-900`)
+- Placeholders (`placeholder:text-gray-400`)
+- Descriptions/muted text (`text-gray-500`)
+- Badge text (`text-gray-700`)
+- Any text in shadcn/ui components (Dialog, Select, Popover, etc.)
+
+### SL-Specific UI Components
+
+For the Sense Loop dashboard (`/sl/*` routes), use **SL wrapper components** instead of stock shadcn/ui components. These wrappers use explicit Tailwind colors instead of CSS variables, ensuring text visibility in portals.
+
+**Location:** `src/components/sl/ui/`
+
+**Available components:**
+| SL Component | Stock Replacement |
+|-------------|-------------------|
+| `SlDialog`, `SlDialogContent`, `SlDialogHeader`, `SlDialogTitle`, `SlDialogDescription`, `SlDialogFooter` | `Dialog`, `DialogContent`, etc. |
+| `SlDropdownMenu`, `SlDropdownMenuContent`, `SlDropdownMenuItem`, `SlDropdownMenuSeparator`, `SlDropdownMenuTrigger` | `DropdownMenu`, etc. |
+| `SlSelect`, `SlSelectContent`, `SlSelectItem`, `SlSelectTrigger`, `SlSelectValue` | `Select`, etc. |
+| `SlInput` | `Input` |
+| `SlTextarea` | `Textarea` |
+| `SlLabel` | `Label` |
+| `SlBadge` | `Badge` |
+
+**Usage:**
+```typescript
+// In SL pages, import from sl/ui instead of ui
+import { SlDialog, SlDialogContent, SlDialogTitle } from '@/components/sl/ui/sl-dialog';
+import { SlSelect, SlSelectContent, SlSelectItem, SlSelectTrigger, SlSelectValue } from '@/components/sl/ui/sl-select';
+import { SlInput } from '@/components/sl/ui/sl-input';
+import { SlLabel } from '@/components/sl/ui/sl-label';
+
+// Or use the barrel export
+import { SlDialog, SlInput, SlLabel } from '@/components/sl/ui';
+```
+
+**Why this pattern exists:**
+1. Keeps stock Open Wearables UI components pristine for upstream compatibility
+2. CSS variables from the main app may not resolve in portal contexts (dialogs, dropdowns, selects)
+3. SL pages need explicit colors (`text-gray-700`, `bg-white`) to ensure visibility
+
+**When to use:**
+- Any SL page (`/sl/*` routes) using dialogs, dropdowns, selects, or form inputs
+- Any component that renders via a portal
+
+**When NOT to use:**
+- Stock Open Wearables pages
+- Components that don't use portals (e.g., Button, Card can use stock versions)
+
 ## Environment Variables
 
 Access via `import.meta.env`:

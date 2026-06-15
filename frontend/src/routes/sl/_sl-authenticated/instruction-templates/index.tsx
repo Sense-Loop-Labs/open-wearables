@@ -11,6 +11,8 @@ import {
   Clock,
   Activity,
   Pencil,
+  ClipboardList,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -57,8 +59,15 @@ import {
   useActivateActivityTemplate,
   useRetireActivityTemplate,
 } from '@/hooks/api/use-sl-instruction-templates';
+import {
+  useQuestionnaires,
+  useCreateQuestionnaire,
+  useActivateQuestionnaire,
+  useRetireQuestionnaire,
+  useDuplicateQuestionnaire,
+} from '@/hooks/api/use-sl-questionnaires';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
-import type { InstructionTemplate, ActivityTemplate } from '@/lib/api/types/sense-loop';
+import type { InstructionTemplate, ActivityTemplate, QuestionnaireTemplate } from '@/lib/api/types/sense-loop';
 
 export const Route = createFileRoute(
   '/sl/_sl-authenticated/instruction-templates/'
@@ -68,11 +77,12 @@ export const Route = createFileRoute(
 
 function InstructionTemplatesPage() {
   const organizationId = getSlCurrentOrgId();
-  const [activeTab, setActiveTab] = useState<'templates' | 'activities'>('templates');
+  const [activeTab, setActiveTab] = useState<'templates' | 'activities' | 'questionnaires'>('templates');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isCreateActivityDialogOpen, setIsCreateActivityDialogOpen] = useState(false);
+  const [isCreateQuestionnaireDialogOpen, setIsCreateQuestionnaireDialogOpen] = useState(false);
 
   // Queries
   const { data: templatesData, isLoading: isLoadingTemplates } = useInstructionTemplates({
@@ -85,6 +95,12 @@ function InstructionTemplatesPage() {
     organization_id: organizationId || undefined,
     include_shared: true,
     status: statusFilter !== 'all' ? (statusFilter as 'draft' | 'active' | 'retired') : undefined,
+  });
+
+  const { data: questionnairesData, isLoading: isLoadingQuestionnaires } = useQuestionnaires({
+    organization_id: organizationId || undefined,
+    include_shared: true,
+    is_active: statusFilter === 'active' ? true : statusFilter === 'retired' ? false : undefined,
   });
 
   // Filter by search
@@ -100,6 +116,13 @@ function InstructionTemplatesPage() {
       a.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const filteredQuestionnaires = questionnairesData?.items.filter(
+    (q) =>
+      q.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (q.description?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      q.code.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   // Stats
   const templateStats = {
     total: templatesData?.total || 0,
@@ -111,6 +134,12 @@ function InstructionTemplatesPage() {
     total: activitiesData?.total || 0,
     active: activitiesData?.items.filter((a) => a.status === 'active').length || 0,
     draft: activitiesData?.items.filter((a) => a.status === 'draft').length || 0,
+  };
+
+  const questionnaireStats = {
+    total: questionnairesData?.total || 0,
+    active: questionnairesData?.items.filter((q) => q.is_active).length || 0,
+    inactive: questionnairesData?.items.filter((q) => !q.is_active).length || 0,
   };
 
   return (
@@ -128,6 +157,14 @@ function InstructionTemplatesPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            onClick={() => setIsCreateQuestionnaireDialogOpen(true)}
+            className="border-[var(--sl-border)]"
+          >
+            <ClipboardList className="h-4 w-4 mr-2" />
+            New Questionnaire
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setIsCreateActivityDialogOpen(true)}
             className="border-[var(--sl-border)]"
           >
@@ -142,7 +179,7 @@ function InstructionTemplatesPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <StatCard
           title="Total Templates"
           value={templateStats.total}
@@ -159,14 +196,19 @@ function InstructionTemplatesPage() {
           icon={<Activity className="h-5 w-5" />}
         />
         <StatCard
+          title="Questionnaires"
+          value={questionnaireStats.total}
+          icon={<ClipboardList className="h-5 w-5" />}
+        />
+        <StatCard
           title="Draft Items"
-          value={templateStats.draft + activityStats.draft}
+          value={templateStats.draft + activityStats.draft + questionnaireStats.inactive}
           icon={<Clock className="h-5 w-5 text-yellow-500" />}
         />
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'templates' | 'activities')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'templates' | 'activities' | 'questionnaires')}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="templates">
@@ -174,6 +216,9 @@ function InstructionTemplatesPage() {
             </TabsTrigger>
             <TabsTrigger value="activities">
               Activities ({activityStats.total})
+            </TabsTrigger>
+            <TabsTrigger value="questionnaires">
+              Questionnaires ({questionnaireStats.total})
             </TabsTrigger>
           </TabsList>
 
@@ -217,6 +262,14 @@ function InstructionTemplatesPage() {
             <ActivityList activities={filteredActivities || []} />
           )}
         </TabsContent>
+
+        <TabsContent value="questionnaires" className="mt-4">
+          {isLoadingQuestionnaires ? (
+            <TemplateListSkeleton />
+          ) : (
+            <QuestionnaireList questionnaires={filteredQuestionnaires || []} />
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Create Template Dialog */}
@@ -229,6 +282,12 @@ function InstructionTemplatesPage() {
       <CreateActivityDialog
         open={isCreateActivityDialogOpen}
         onOpenChange={setIsCreateActivityDialogOpen}
+      />
+
+      {/* Create Questionnaire Dialog */}
+      <CreateQuestionnaireDialog
+        open={isCreateQuestionnaireDialogOpen}
+        onOpenChange={setIsCreateQuestionnaireDialogOpen}
       />
     </div>
   );
@@ -1341,6 +1400,336 @@ function EditActivityDialog({
             disabled={!title || !description || updateMutation.isPending}
           >
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </SlDialogFooter>
+      </SlDialogContent>
+    </SlDialog>
+  );
+}
+
+// ============================================================================
+// Questionnaire Components
+// ============================================================================
+
+function QuestionnaireList({ questionnaires }: { questionnaires: QuestionnaireTemplate[] }) {
+  const activateMutation = useActivateQuestionnaire();
+  const retireMutation = useRetireQuestionnaire();
+  const duplicateMutation = useDuplicateQuestionnaire();
+
+  if (questionnaires.length === 0) {
+    return (
+      <div className="text-center py-12 bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg">
+        <ClipboardList className="h-12 w-12 mx-auto text-[var(--sl-text-muted)]" />
+        <h3 className="mt-4 text-lg font-medium text-[var(--sl-text-primary)]">
+          No questionnaires found
+        </h3>
+        <p className="mt-2 text-sm text-[var(--sl-text-secondary)]">
+          Create your first questionnaire template to get started
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {questionnaires.map((questionnaire) => (
+        <div
+          key={questionnaire.id}
+          className="bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg p-4 hover:border-[var(--sl-border-hover)] transition-colors"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/sl/instruction-templates/questionnaires/$questionnaireId"
+                  params={{ questionnaireId: questionnaire.id }}
+                  className="text-lg font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-primary)] transition-colors"
+                >
+                  {questionnaire.title}
+                </Link>
+                <QuestionnaireStatusBadge isActive={questionnaire.is_active} />
+                {!questionnaire.organization_id && (
+                  <SlBadge variant="outline" className="text-xs">
+                    Shared
+                  </SlBadge>
+                )}
+              </div>
+              <p className="text-sm text-[var(--sl-text-secondary)] mt-1 line-clamp-2">
+                {questionnaire.description || 'No description'}
+              </p>
+              <div className="flex items-center gap-4 mt-3 text-xs text-[var(--sl-text-muted)]">
+                <span>Code: {questionnaire.code}</span>
+                <span>{questionnaire.question_count} questions</span>
+                <span className="capitalize">{questionnaire.questionnaire_type.replace('_', ' ')}</span>
+                <span className="capitalize">{questionnaire.category}</span>
+                {questionnaire.has_scoring && (
+                  <span className="flex items-center gap-1 text-orange-500">
+                    <AlertTriangle className="h-3 w-3" />
+                    Scoring enabled
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <SlDropdownMenu>
+              <SlDropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </SlDropdownMenuTrigger>
+              <SlDropdownMenuContent align="end">
+                <SlDropdownMenuItem asChild>
+                  <Link
+                    to="/sl/instruction-templates/questionnaires/$questionnaireId"
+                    params={{ questionnaireId: questionnaire.id }}
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit Questions
+                  </Link>
+                </SlDropdownMenuItem>
+                <SlDropdownMenuItem
+                  onClick={() => duplicateMutation.mutate({ id: questionnaire.id })}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicate
+                </SlDropdownMenuItem>
+                <SlDropdownMenuSeparator />
+                {!questionnaire.is_active && (
+                  <SlDropdownMenuItem
+                    onClick={() => activateMutation.mutate(questionnaire.id)}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Activate
+                  </SlDropdownMenuItem>
+                )}
+                {questionnaire.is_active && (
+                  <SlDropdownMenuItem
+                    onClick={() => retireMutation.mutate(questionnaire.id)}
+                    className="text-red-600"
+                  >
+                    <Archive className="h-4 w-4 mr-2" />
+                    Retire
+                  </SlDropdownMenuItem>
+                )}
+              </SlDropdownMenuContent>
+            </SlDropdownMenu>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QuestionnaireStatusBadge({ isActive }: { isActive: boolean }) {
+  return (
+    <span
+      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+        isActive
+          ? 'bg-green-500/10 text-green-500'
+          : 'bg-gray-500/10 text-gray-500'
+      }`}
+    >
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
+  );
+}
+
+// Questionnaire type and category options
+const QUESTIONNAIRE_TYPES = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'on_demand', label: 'On Demand' },
+  { value: 'triggered', label: 'Triggered' },
+];
+
+const QUESTIONNAIRE_CATEGORIES = [
+  { value: 'symptom', label: 'Symptom Assessment' },
+  { value: 'pain', label: 'Pain Assessment' },
+  { value: 'mood', label: 'Mood Assessment' },
+  { value: 'activity', label: 'Activity Assessment' },
+  { value: 'medication', label: 'Medication Assessment' },
+];
+
+function CreateQuestionnaireDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const navigate = useNavigate();
+  const createMutation = useCreateQuestionnaire();
+  const [title, setTitle] = useState('');
+  const [code, setCode] = useState('');
+  const [description, setDescription] = useState('');
+  const [questionnaireType, setQuestionnaireType] = useState('on_demand');
+  const [category, setCategory] = useState('symptom');
+  const [hasScoring, setHasScoring] = useState(false);
+  const [estimatedMinutes, setEstimatedMinutes] = useState('');
+
+  // Auto-generate code from title
+  useEffect(() => {
+    if (title && !code) {
+      const generatedCode = title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '_')
+        .substring(0, 50);
+      setCode(generatedCode);
+    }
+  }, [title, code]);
+
+  const resetForm = () => {
+    setTitle('');
+    setCode('');
+    setDescription('');
+    setQuestionnaireType('on_demand');
+    setCategory('symptom');
+    setHasScoring(false);
+    setEstimatedMinutes('');
+  };
+
+  const handleSubmit = () => {
+    createMutation.mutate(
+      {
+        title,
+        code,
+        description: description || undefined,
+        questionnaire_type: questionnaireType,
+        category,
+        has_scoring: hasScoring,
+        estimated_minutes: estimatedMinutes ? parseInt(estimatedMinutes, 10) : undefined,
+      },
+      {
+        onSuccess: (newQuestionnaire) => {
+          onOpenChange(false);
+          resetForm();
+          // Navigate to the questionnaire editor
+          navigate({
+            to: '/sl/instruction-templates/questionnaires/$questionnaireId',
+            params: { questionnaireId: newQuestionnaire.id },
+          });
+        },
+      }
+    );
+  };
+
+  return (
+    <SlDialog open={open} onOpenChange={onOpenChange}>
+      <SlDialogContent className="max-w-lg">
+        <SlDialogHeader>
+          <SlDialogTitle>Create Questionnaire</SlDialogTitle>
+          <SlDialogDescription>
+            Create a new questionnaire template for patient assessments
+          </SlDialogDescription>
+        </SlDialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <SlLabel htmlFor="questionnaire-title">Title</SlLabel>
+            <SlInput
+              id="questionnaire-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g., Daily Symptom Check"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <SlLabel htmlFor="questionnaire-code">Code</SlLabel>
+            <SlInput
+              id="questionnaire-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g., daily_symptom_check"
+            />
+            <p className="text-xs text-[var(--sl-text-muted)]">
+              Unique identifier for this questionnaire
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <SlLabel htmlFor="questionnaire-description">Description</SlLabel>
+            <SlTextarea
+              id="questionnaire-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of this questionnaire..."
+              rows={2}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <SlLabel htmlFor="questionnaire-type">Type</SlLabel>
+              <SlSelect value={questionnaireType} onValueChange={setQuestionnaireType}>
+                <SlSelectTrigger>
+                  <SlSelectValue />
+                </SlSelectTrigger>
+                <SlSelectContent>
+                  {QUESTIONNAIRE_TYPES.map((type) => (
+                    <SlSelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SlSelectItem>
+                  ))}
+                </SlSelectContent>
+              </SlSelect>
+            </div>
+
+            <div className="space-y-2">
+              <SlLabel htmlFor="questionnaire-category">Category</SlLabel>
+              <SlSelect value={category} onValueChange={setCategory}>
+                <SlSelectTrigger>
+                  <SlSelectValue />
+                </SlSelectTrigger>
+                <SlSelectContent>
+                  {QUESTIONNAIRE_CATEGORIES.map((cat) => (
+                    <SlSelectItem key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </SlSelectItem>
+                  ))}
+                </SlSelectContent>
+              </SlSelect>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <SlLabel htmlFor="estimated-minutes">Estimated Minutes</SlLabel>
+              <SlInput
+                id="estimated-minutes"
+                type="number"
+                value={estimatedMinutes}
+                onChange={(e) => setEstimatedMinutes(e.target.value)}
+                placeholder="5"
+                min="1"
+                max="60"
+              />
+            </div>
+
+            <div className="space-y-2 flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer pb-2">
+                <input
+                  type="checkbox"
+                  checked={hasScoring}
+                  onChange={(e) => setHasScoring(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-[var(--sl-text-primary)]">Enable scoring</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <SlDialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!title || !code || createMutation.isPending}
+          >
+            {createMutation.isPending ? 'Creating...' : 'Create Questionnaire'}
           </Button>
         </SlDialogFooter>
       </SlDialogContent>

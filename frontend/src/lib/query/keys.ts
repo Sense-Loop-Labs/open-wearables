@@ -296,5 +296,16 @@ export const queryKeys = {
       content: (patientId: string, planId: string) =>
         [...queryKeys.sl.patientPlans.detail(patientId, planId), 'content'] as const,
     },
+
+    // Questionnaire Templates
+    questionnaires: {
+      all: ['sl', 'questionnaires'] as const,
+      lists: () => [...queryKeys.sl.questionnaires.all, 'list'] as const,
+      list: (params?: { organization_id?: string; is_active?: boolean; questionnaire_type?: string; category?: string }) =>
+        [...queryKeys.sl.questionnaires.lists(), params] as const,
+      details: () => [...queryKeys.sl.questionnaires.all, 'detail'] as const,
+      detail: (id: string) =>
+        [...queryKeys.sl.questionnaires.details(), id] as const,
+    },
   },
 } as const;

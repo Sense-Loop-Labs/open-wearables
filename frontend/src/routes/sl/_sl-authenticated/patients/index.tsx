@@ -16,7 +16,9 @@ import {
 } from '@/components/sl/dashboard';
 import { useCreateSlPatient, useSlPatients } from '@/hooks/api/use-sl-patients';
 import { useSurgeryTypes } from '@/hooks/api/use-sl-value-sets';
-import type { PatientCreate, PatientEnrollmentStatus, PatientSummary } from '@/lib/api/types/sense-loop';
+import { useInstructionTemplates, useAssignPatientPlan } from '@/hooks/api/use-sl-instruction-templates';
+import { useQuestionnaires, useAssignQuestionnaire } from '@/hooks/api/use-sl-questionnaires';
+import type { PatientCreate, PatientEnrollmentStatus } from '@/lib/api/types/sense-loop';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
 
 interface SearchParams {
@@ -288,9 +290,20 @@ function AlertsBadges({ critical, warning }: { critical: number; warning: number
 }
 
 function CreatePatientDialog({ onClose }: { onClose: () => void }) {
+  const organizationId = getSlCurrentOrgId();
   const createPatient = useCreateSlPatient();
+  const assignPlan = useAssignPatientPlan();
+  const assignQuestionnaire = useAssignQuestionnaire();
   const { data: surgeryTypes, isLoading: surgeryTypesLoading } = useSurgeryTypes();
-  const [formData, setFormData] = useState<Partial<PatientCreate>>({
+  const { data: templatesData, isLoading: templatesLoading } = useInstructionTemplates({
+    organization_id: organizationId || undefined,
+    include_shared: true,
+  });
+  const { data: questionnairesData, isLoading: questionnairesLoading } = useQuestionnaires({
+    organization_id: organizationId || undefined,
+    is_active: true,
+  });
+  const [formData, setFormData] = useState<Partial<PatientCreate> & { instruction_template_id?: string; questionnaire_id?: string }>({
     first_name: '',
     last_name: '',
     email: '',
@@ -301,6 +314,8 @@ function CreatePatientDialog({ onClose }: { onClose: () => void }) {
     primary_diagnosis: '',
     surgery_type_code: '',
     surgery_date: '',
+    instruction_template_id: '',
+    questionnaire_id: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -323,7 +338,7 @@ function CreatePatientDialog({ onClose }: { onClose: () => void }) {
     }
 
     try {
-      await createPatient.mutateAsync({
+      const newPatient = await createPatient.mutateAsync({
         organization_id: orgId,
         first_name: formData.first_name!.trim(),
         last_name: formData.last_name!.trim(),
@@ -336,6 +351,26 @@ function CreatePatientDialog({ onClose }: { onClose: () => void }) {
         surgery_type_code: formData.surgery_type_code || undefined,
         surgery_date: formData.surgery_date || undefined,
       });
+
+      // Assign instruction template if selected
+      if (formData.instruction_template_id) {
+        await assignPlan.mutateAsync({
+          patientId: newPatient.id,
+          data: {
+            template_id: formData.instruction_template_id,
+            reference_type: formData.surgery_date ? 'surgery_date' : 'assignment_date',
+            generate_tasks: true,
+          },
+        });
+      }
+
+      // Assign questionnaire if selected
+      if (formData.questionnaire_id) {
+        await assignQuestionnaire.mutateAsync({
+          patientId: newPatient.id,
+          questionnaireId: formData.questionnaire_id,
+        });
+      }
 
       onClose();
     } catch {
@@ -486,6 +521,40 @@ function CreatePatientDialog({ onClose }: { onClose: () => void }) {
                   placeholder="e.g., PAD"
                 />
               </div>
+            </div>
+
+            <div className="sl-form-group">
+              <label className="sl-form-label">Care Plan Template</label>
+              <select
+                value={formData.instruction_template_id || ''}
+                onChange={(e) => setFormData({ ...formData, instruction_template_id: e.target.value })}
+                className="sl-select w-full"
+                disabled={templatesLoading}
+              >
+                <option value="">{templatesLoading ? 'Loading...' : 'Select care plan (optional)'}</option>
+                {templatesData?.items?.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="sl-form-group">
+              <label className="sl-form-label">Questionnaire</label>
+              <select
+                value={formData.questionnaire_id || ''}
+                onChange={(e) => setFormData({ ...formData, questionnaire_id: e.target.value })}
+                className="sl-select w-full"
+                disabled={questionnairesLoading}
+              >
+                <option value="">{questionnairesLoading ? 'Loading...' : 'Select questionnaire (optional)'}</option>
+                {questionnairesData?.items?.map((questionnaire) => (
+                  <option key={questionnaire.id} value={questionnaire.id}>
+                    {questionnaire.title}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {errors.general && (

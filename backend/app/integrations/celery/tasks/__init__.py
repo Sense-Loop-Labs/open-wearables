@@ -51,6 +51,16 @@ from .medplum_tasks import (
 
 # SENSE-LOOP: Native alert engine integration
 from .sense_loop_tasks import process_vitals_for_sense_loop
+
+# SENSE-LOOP: Instruction template tasks
+from .instruction_tasks import (
+    generate_daily_tasks,
+    process_task_notifications,
+    mark_overdue_tasks,
+    send_daily_task_summaries,
+    process_data_for_tasks,
+    process_questionnaire_for_tasks,
+)
 from .periodic_sync_task import sync_all_users
 from .process_aws_upload_task import process_aws_upload
 from .process_sdk_upload_task import process_sdk_upload
@@ -103,4 +113,11 @@ __all__ = [
     "send_sleep_batch_to_medplum",
     # Sense Loop native alert engine
     "process_vitals_for_sense_loop",
+    # Sense Loop instruction tasks
+    "generate_daily_tasks",
+    "process_task_notifications",
+    "mark_overdue_tasks",
+    "send_daily_task_summaries",
+    "process_data_for_tasks",
+    "process_questionnaire_for_tasks",
 ]

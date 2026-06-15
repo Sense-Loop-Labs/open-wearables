@@ -1085,3 +1085,29 @@ async def unregister_device(
         db.commit()
 
     return {"success": True, "message": "Device unregistered"}
+
+
+@router.post("/devices/test-push")
+async def test_push_notification(
+    db: DbSession,
+    patient=Depends(get_patient_from_token),
+):
+    """Send a test push notification to the current patient's devices.
+
+    For testing push notification setup.
+    """
+    from sense_loop.services import NotificationService
+
+    notification_service = NotificationService(db)
+    count = await notification_service.send_push(
+        patient_id=patient.id,
+        title="Test Notification",
+        body="Push notifications are working!",
+        data={"type": "test"},
+    )
+
+    return {
+        "success": count > 0,
+        "devices_notified": count,
+        "message": f"Sent to {count} device(s)" if count > 0 else "No active devices found",
+    }

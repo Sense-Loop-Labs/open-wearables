@@ -1,0 +1,1125 @@
+import { useState, useEffect } from 'react';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  ArrowLeft,
+  Plus,
+  GripVertical,
+  Trash2,
+  AlertTriangle,
+  CheckCircle,
+  Archive,
+} from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+
+import { SlInput } from '@/components/sl/ui/sl-input';
+import { SlTextarea } from '@/components/sl/ui/sl-textarea';
+import { SlLabel } from '@/components/sl/ui/sl-label';
+import { SlBadge } from '@/components/sl/ui/sl-badge';
+import {
+  SlSelect,
+  SlSelectContent,
+  SlSelectItem,
+  SlSelectTrigger,
+  SlSelectValue,
+} from '@/components/sl/ui/sl-select';
+import {
+  SlDialog,
+  SlDialogContent,
+  SlDialogDescription,
+  SlDialogFooter,
+  SlDialogHeader,
+  SlDialogTitle,
+} from '@/components/sl/ui/sl-dialog';
+
+import {
+  useQuestionnaire,
+  useActivateQuestionnaire,
+  useRetireQuestionnaire,
+  useAddQuestion,
+  useUpdateQuestion,
+  useDeleteQuestion,
+  useReorderQuestions,
+} from '@/hooks/api/use-sl-questionnaires';
+import type { QuestionnaireQuestion, QuestionOption, QuestionAlertConfig, QuestionnaireTemplateDetail } from '@/lib/api/types/sense-loop';
+
+export const Route = createFileRoute(
+  '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId'
+)({
+  component: QuestionnaireDetailPage,
+});
+
+const QUESTION_TYPES = [
+  { value: 'boolean', label: 'Yes/No (Boolean)' },
+  { value: 'single_choice', label: 'Single Choice' },
+  { value: 'multi_choice', label: 'Multiple Choice' },
+  { value: 'scale', label: 'Scale (0-10)' },
+  { value: 'number', label: 'Number Input' },
+  { value: 'text', label: 'Text Input' },
+];
+
+function QuestionnaireDetailPage() {
+  const { questionnaireId } = Route.useParams();
+  const navigate = useNavigate();
+
+  const { data: questionnaire, isLoading, error } = useQuestionnaire(questionnaireId);
+  const activateMutation = useActivateQuestionnaire();
+  const retireMutation = useRetireQuestionnaire();
+  const reorderMutation = useReorderQuestions();
+
+  const [activeTab, setActiveTab] = useState('content');
+  const [isAddQuestionDialogOpen, setIsAddQuestionDialogOpen] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<QuestionnaireQuestion | null>(null);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id && questionnaire) {
+      const oldIndex = questionnaire.questions.findIndex((q) => q.id === active.id);
+      const newIndex = questionnaire.questions.findIndex((q) => q.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reorderedQuestions = arrayMove(questionnaire.questions, oldIndex, newIndex);
+        const updates = reorderedQuestions.map((q, idx) => ({
+          question_id: q.id,
+          order: idx,
+        }));
+
+        reorderMutation.mutate({
+          questionnaireId,
+          questions: updates,
+        });
+      }
+    }
+  };
+
+  if (isLoading) {
+    return <QuestionnaireDetailSkeleton />;
+  }
+
+  if (error || !questionnaire) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-500">Failed to load questionnaire</p>
+        <Button variant="outline" onClick={() => navigate({ to: '/sl/instruction-templates' })} className="mt-4">
+          Go Back
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/sl/instruction-templates"
+            className="p-2 hover:bg-[var(--sl-bg-hover)] rounded-lg transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5 text-[var(--sl-text-secondary)]" />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold text-[var(--sl-text-primary)]">
+                {questionnaire.title}
+              </h1>
+              <SlBadge variant={questionnaire.is_active ? 'default' : 'secondary'}>
+                {questionnaire.is_active ? 'Active' : 'Inactive'}
+              </SlBadge>
+            </div>
+            <p className="text-sm text-[var(--sl-text-secondary)] mt-1">
+              {questionnaire.description || 'No description'} &middot; Code: {questionnaire.code}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {!questionnaire.is_active ? (
+            <Button
+              variant="outline"
+              onClick={() => activateMutation.mutate(questionnaireId)}
+              disabled={activateMutation.isPending}
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Activate
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => retireMutation.mutate(questionnaireId)}
+              disabled={retireMutation.isPending}
+              className="text-red-600 hover:text-red-700"
+            >
+              <Archive className="h-4 w-4 mr-2" />
+              Retire
+            </Button>
+          )}
+          <Button onClick={() => setIsAddQuestionDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Question
+          </Button>
+        </div>
+      </div>
+
+      {/* Content Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="content">Content</TabsTrigger>
+          <TabsTrigger value="preview">Preview</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="content" className="mt-4 space-y-6">
+          {/* Questionnaire Info */}
+          <div className="bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span className="text-[var(--sl-text-muted)]">Type:</span>
+                <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
+                  {questionnaire.questionnaire_type.replace('_', ' ')}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--sl-text-muted)]">Category:</span>
+                <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
+                  {questionnaire.category}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--sl-text-muted)]">Questions:</span>
+                <span className="ml-2 text-[var(--sl-text-primary)]">
+                  {questionnaire.question_count}
+                </span>
+              </div>
+              <div>
+                <span className="text-[var(--sl-text-muted)]">Scoring:</span>
+                <span className="ml-2 text-[var(--sl-text-primary)]">
+                  {questionnaire.has_scoring ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Questions List */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium text-[var(--sl-text-primary)]">Questions</h2>
+
+            {questionnaire.questions.length === 0 ? (
+              <div className="text-center py-12 bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg">
+                <p className="text-[var(--sl-text-muted)]">No questions yet</p>
+                <Button onClick={() => setIsAddQuestionDialogOpen(true)} className="mt-4">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add First Question
+                </Button>
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={questionnaire.questions.map((q) => q.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-3">
+                    {questionnaire.questions.map((question, index) => (
+                      <SortableQuestionCard
+                        key={question.id}
+                        question={question}
+                        index={index}
+                        onEdit={() => setEditingQuestion(question)}
+                        questionnaireId={questionnaireId}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="preview" className="mt-4">
+          <QuestionnairePreview questionnaire={questionnaire} />
+        </TabsContent>
+      </Tabs>
+
+      {/* Add Question Dialog */}
+      <QuestionFormDialog
+        open={isAddQuestionDialogOpen}
+        onOpenChange={setIsAddQuestionDialogOpen}
+        questionnaireId={questionnaireId}
+        hasScoring={questionnaire.has_scoring}
+      />
+
+      {/* Edit Question Dialog */}
+      {editingQuestion && (
+        <QuestionFormDialog
+          open={!!editingQuestion}
+          onOpenChange={(open) => !open && setEditingQuestion(null)}
+          questionnaireId={questionnaireId}
+          question={editingQuestion}
+          hasScoring={questionnaire.has_scoring}
+        />
+      )}
+    </div>
+  );
+}
+
+function SortableQuestionCard({
+  question,
+  index,
+  onEdit,
+  questionnaireId,
+}: {
+  question: QuestionnaireQuestion;
+  index: number;
+  onEdit: () => void;
+  questionnaireId: string;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: question.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const deleteMutation = useDeleteQuestion();
+  const hasAlertConfig = question.alert_config && question.alert_config.trigger_values?.length > 0;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg p-4 hover:border-[var(--sl-border-hover)] transition-colors"
+    >
+      <div className="flex items-start gap-3">
+        <div
+          {...attributes}
+          {...listeners}
+          className="flex items-center gap-2 text-[var(--sl-text-muted)] cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4" />
+          <span className="text-sm font-medium">{index + 1}</span>
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="font-medium text-[var(--sl-text-primary)]">
+                {question.text}
+                {question.is_required && <span className="text-red-500 ml-1">*</span>}
+              </p>
+              {question.help_text && (
+                <p className="text-sm text-[var(--sl-text-muted)] mt-1">{question.help_text}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={onEdit}>
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                onClick={() => {
+                  if (confirm('Are you sure you want to delete this question?')) {
+                    deleteMutation.mutate({
+                      questionnaireId,
+                      questionId: question.id,
+                    });
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <SlBadge variant="outline" className="text-xs">
+              {QUESTION_TYPES.find((t) => t.value === question.question_type)?.label || question.question_type}
+            </SlBadge>
+            <SlBadge variant="outline" className="text-xs">
+              Code: {question.code}
+            </SlBadge>
+            {question.options && (
+              <SlBadge variant="outline" className="text-xs">
+                {question.options.length} options
+              </SlBadge>
+            )}
+            {hasAlertConfig && (
+              <SlBadge variant="destructive" className="text-xs">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                Alert configured
+              </SlBadge>
+            )}
+          </div>
+
+          {/* Show options for choice questions */}
+          {question.options && question.options.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {question.options.map((option, idx) => {
+                const isAlertTrigger = question.alert_config?.trigger_values?.includes(option.value);
+                const severity = question.alert_config?.severity_by_value?.[option.value] || question.alert_config?.alert_severity || 'info';
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 text-sm text-[var(--sl-text-secondary)]"
+                  >
+                    <span className="w-4 h-4 rounded border border-[var(--sl-border)] flex-shrink-0" />
+                    <span>{option.label}</span>
+                    {option.score !== undefined && option.score !== null && (
+                      <span className="text-xs text-[var(--sl-text-muted)]">(score: {option.score})</span>
+                    )}
+                    {isAlertTrigger && (
+                      <span className={`flex items-center gap-1 text-xs ${
+                        severity === 'critical'
+                          ? 'text-red-600'
+                          : severity === 'warning'
+                          ? 'text-yellow-600'
+                          : 'text-blue-600'
+                      }`}>
+                        <AlertTriangle className="h-3 w-3" />
+                        {severity}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionFormDialog({
+  open,
+  onOpenChange,
+  questionnaireId,
+  question,
+  hasScoring,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  questionnaireId: string;
+  question?: QuestionnaireQuestion;
+  hasScoring: boolean;
+}) {
+  const addMutation = useAddQuestion();
+  const updateMutation = useUpdateQuestion();
+
+  const isEditing = !!question;
+
+  const [code, setCode] = useState(question?.code || '');
+  const [text, setText] = useState(question?.text || '');
+  const [helpText, setHelpText] = useState(question?.help_text || '');
+  const [questionType, setQuestionType] = useState<string>(question?.question_type || 'single_choice');
+  const [isRequired, setIsRequired] = useState(question?.is_required ?? true);
+  const [options, setOptions] = useState<QuestionOption[]>(
+    question?.options || [{ value: '', label: '', score: undefined }]
+  );
+  const [alertConfig, setAlertConfig] = useState<QuestionAlertConfig>(
+    question?.alert_config || { trigger_values: [], alert_severity: 'warning', alert_message: '' }
+  );
+  // Per-option severity tracking
+  const [optionSeverities, setOptionSeverities] = useState<Record<string, 'info' | 'warning' | 'critical'>>(
+    question?.alert_config?.severity_by_value || {}
+  );
+
+  // Scale validation
+  const [scaleMin, setScaleMin] = useState(question?.validation?.min?.toString() || '0');
+  const [scaleMax, setScaleMax] = useState(question?.validation?.max?.toString() || '10');
+
+  const showOptions = ['single_choice', 'multi_choice'].includes(questionType);
+  const showScale = questionType === 'scale';
+
+  // Reset form when dialog opens for a new question (not editing)
+  useEffect(() => {
+    if (open && !question) {
+      setCode('');
+      setText('');
+      setHelpText('');
+      setQuestionType('single_choice');
+      setIsRequired(true);
+      setOptions([{ value: '', label: '', score: undefined }]);
+      setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '' });
+      setOptionSeverities({});
+      setScaleMin('0');
+      setScaleMax('10');
+    }
+  }, [open, question]);
+
+  const resetForm = () => {
+    setCode('');
+    setText('');
+    setHelpText('');
+    setQuestionType('single_choice');
+    setIsRequired(true);
+    setOptions([{ value: '', label: '', score: undefined }]);
+    setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '' });
+    setOptionSeverities({});
+    setScaleMin('0');
+    setScaleMax('10');
+  };
+
+  const handleClose = () => {
+    if (!isEditing) {
+      resetForm();
+    }
+    onOpenChange(false);
+  };
+
+  const handleSubmit = () => {
+    const questionData = {
+      code,
+      text,
+      help_text: helpText || undefined,
+      question_type: questionType,
+      is_required: isRequired,
+      options: showOptions
+        ? options.filter((o) => o.value).map((o, idx) => ({
+            value: o.value,
+            label: o.label || o.value,  // Use value as label if label is empty
+            score: hasScoring ? (o.score ?? idx) : undefined,
+          }))
+        : undefined,
+      validation: showScale
+        ? { min: parseFloat(scaleMin), max: parseFloat(scaleMax) }
+        : undefined,
+      alert_config: alertConfig.trigger_values.length > 0
+        ? {
+            trigger_values: alertConfig.trigger_values,
+            alert_severity: alertConfig.alert_severity as 'info' | 'warning' | 'critical',
+            alert_message: alertConfig.alert_message || undefined,
+            severity_by_value: Object.keys(optionSeverities).length > 0 ? optionSeverities : undefined,
+          }
+        : undefined,
+    };
+
+    if (isEditing && question) {
+      updateMutation.mutate(
+        {
+          questionnaireId,
+          questionId: question.id,
+          data: questionData,
+        },
+        {
+          onSuccess: () => handleClose(),
+        }
+      );
+    } else {
+      addMutation.mutate(
+        { questionnaireId, data: questionData },
+        {
+          onSuccess: () => {
+            resetForm();
+            handleClose();
+          },
+        }
+      );
+    }
+  };
+
+  const addOption = () => {
+    setOptions([...options, { value: '', label: '', score: undefined }]);
+  };
+
+  const updateOption = (index: number, field: keyof QuestionOption, value: string | number) => {
+    const newOptions = [...options];
+    if (field === 'score') {
+      newOptions[index] = { ...newOptions[index], [field]: value === '' ? undefined : Number(value) };
+    } else {
+      newOptions[index] = { ...newOptions[index], [field]: value };
+    }
+    setOptions(newOptions);
+  };
+
+  const removeOption = (index: number) => {
+    setOptions(options.filter((_, i) => i !== index));
+  };
+
+  const toggleAlertTrigger = (value: string) => {
+    const currentTriggers = alertConfig.trigger_values || [];
+    if (currentTriggers.includes(value)) {
+      // Remove trigger
+      setAlertConfig({ ...alertConfig, trigger_values: currentTriggers.filter((v) => v !== value) });
+      // Remove severity for this value
+      const newSeverities = { ...optionSeverities };
+      delete newSeverities[value];
+      setOptionSeverities(newSeverities);
+    } else {
+      // Add trigger with default severity of 'info'
+      setAlertConfig({ ...alertConfig, trigger_values: [...currentTriggers, value] });
+      setOptionSeverities({ ...optionSeverities, [value]: 'info' });
+    }
+  };
+
+  const setOptionSeverity = (value: string, severity: 'info' | 'warning' | 'critical') => {
+    setOptionSeverities({ ...optionSeverities, [value]: severity });
+  };
+
+  return (
+    <SlDialog open={open} onOpenChange={handleClose}>
+      <SlDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <SlDialogHeader>
+          <SlDialogTitle>{isEditing ? 'Edit Question' : 'Add Question'}</SlDialogTitle>
+          <SlDialogDescription>
+            {isEditing ? 'Update the question details' : 'Add a new question to the questionnaire'}
+          </SlDialogDescription>
+        </SlDialogHeader>
+
+        <div className="space-y-4 py-4">
+          {/* Basic Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <SlLabel htmlFor="question-code">Question ID</SlLabel>
+              <SlInput
+                id="question-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="e.g., pain_level"
+              />
+              <p className="text-xs text-[var(--sl-text-muted)]">
+                Internal identifier (lowercase, no spaces)
+              </p>
+            </div>
+            <div className="space-y-2">
+              <SlLabel htmlFor="question-type">Type</SlLabel>
+              <SlSelect value={questionType} onValueChange={setQuestionType}>
+                <SlSelectTrigger>
+                  <SlSelectValue />
+                </SlSelectTrigger>
+                <SlSelectContent>
+                  {QUESTION_TYPES.map((type) => (
+                    <SlSelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SlSelectItem>
+                  ))}
+                </SlSelectContent>
+              </SlSelect>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <SlLabel htmlFor="question-text">Question Text</SlLabel>
+            <SlTextarea
+              id="question-text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="e.g., How would you rate your pain today?"
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <SlLabel htmlFor="question-help">Help Text (Optional)</SlLabel>
+            <SlInput
+              id="question-help"
+              value={helpText}
+              onChange={(e) => setHelpText(e.target.value)}
+              placeholder="Additional instructions for the patient"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is-required"
+              checked={isRequired}
+              onChange={(e) => setIsRequired(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="is-required" className="text-sm text-[var(--sl-text-primary)]">
+              Required question
+            </label>
+          </div>
+
+          {/* Scale Options */}
+          {showScale && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-[var(--sl-text-primary)] mb-3">Scale Range</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <SlLabel htmlFor="scale-min">Minimum</SlLabel>
+                  <SlInput
+                    id="scale-min"
+                    type="number"
+                    value={scaleMin}
+                    onChange={(e) => setScaleMin(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <SlLabel htmlFor="scale-max">Maximum</SlLabel>
+                  <SlInput
+                    id="scale-max"
+                    type="number"
+                    value={scaleMax}
+                    onChange={(e) => setScaleMax(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Boolean Alert Configuration */}
+          {questionType === 'boolean' && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-[var(--sl-text-primary)] mb-3">
+                <AlertTriangle className="h-4 w-4 inline mr-1 text-orange-500" />
+                Alert Configuration
+              </h4>
+              <p className="text-xs text-[var(--sl-text-muted)] mb-3">
+                Configure which answer should trigger an alert
+              </p>
+              <div className="space-y-3">
+                {/* Yes option */}
+                <div className="flex items-center gap-3">
+                  <span className="w-12 text-sm font-medium text-[var(--sl-text-primary)]">Yes</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleAlertTrigger('true')}
+                    className={`p-2 rounded-md transition-colors ${
+                      alertConfig.trigger_values?.includes('true')
+                        ? (optionSeverities['true'] || 'info') === 'critical'
+                          ? 'bg-red-100 text-red-600'
+                          : (optionSeverities['true'] || 'info') === 'warning'
+                          ? 'bg-yellow-100 text-yellow-600'
+                          : 'bg-blue-100 text-blue-600'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    }`}
+                    title={alertConfig.trigger_values?.includes('true') ? 'Alert enabled' : 'Click to enable alert'}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </button>
+                  {alertConfig.trigger_values?.includes('true') && (
+                    <SlSelect
+                      value={optionSeverities['true'] || 'info'}
+                      onValueChange={(val) => setOptionSeverity('true', val as 'info' | 'warning' | 'critical')}
+                    >
+                      <SlSelectTrigger className="w-28">
+                        <SlSelectValue />
+                      </SlSelectTrigger>
+                      <SlSelectContent>
+                        <SlSelectItem value="info">Info</SlSelectItem>
+                        <SlSelectItem value="warning">Warning</SlSelectItem>
+                        <SlSelectItem value="critical">Critical</SlSelectItem>
+                      </SlSelectContent>
+                    </SlSelect>
+                  )}
+                </div>
+                {/* No option */}
+                <div className="flex items-center gap-3">
+                  <span className="w-12 text-sm font-medium text-[var(--sl-text-primary)]">No</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleAlertTrigger('false')}
+                    className={`p-2 rounded-md transition-colors ${
+                      alertConfig.trigger_values?.includes('false')
+                        ? (optionSeverities['false'] || 'info') === 'critical'
+                          ? 'bg-red-100 text-red-600'
+                          : (optionSeverities['false'] || 'info') === 'warning'
+                          ? 'bg-yellow-100 text-yellow-600'
+                          : 'bg-blue-100 text-blue-600'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    }`}
+                    title={alertConfig.trigger_values?.includes('false') ? 'Alert enabled' : 'Click to enable alert'}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </button>
+                  {alertConfig.trigger_values?.includes('false') && (
+                    <SlSelect
+                      value={optionSeverities['false'] || 'info'}
+                      onValueChange={(val) => setOptionSeverity('false', val as 'info' | 'warning' | 'critical')}
+                    >
+                      <SlSelectTrigger className="w-28">
+                        <SlSelectValue />
+                      </SlSelectTrigger>
+                      <SlSelectContent>
+                        <SlSelectItem value="info">Info</SlSelectItem>
+                        <SlSelectItem value="warning">Warning</SlSelectItem>
+                        <SlSelectItem value="critical">Critical</SlSelectItem>
+                      </SlSelectContent>
+                    </SlSelect>
+                  )}
+                </div>
+              </div>
+              {/* Alert message for boolean */}
+              {alertConfig.trigger_values && alertConfig.trigger_values.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <SlLabel htmlFor="boolean-alert-message">Alert Message</SlLabel>
+                  <SlTextarea
+                    id="boolean-alert-message"
+                    value={alertConfig.alert_message || ''}
+                    onChange={(e) => setAlertConfig({ ...alertConfig, alert_message: e.target.value })}
+                    placeholder="e.g., Patient answered Yes - follow up required"
+                    rows={2}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Choice Options */}
+          {showOptions && (
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-[var(--sl-text-primary)]">Answer Options</h4>
+                <Button variant="outline" size="sm" onClick={addOption}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Option
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {options.map((option, index) => {
+                  const optionKey = option.value || option.label;
+                  const isAlertTrigger = alertConfig.trigger_values?.includes(optionKey);
+                  const severity = optionSeverities[optionKey] || 'info';
+                  return (
+                    <div key={index} className="flex items-center gap-2">
+                      <SlInput
+                        value={option.label || option.value}
+                        onChange={(e) => {
+                          // Set both value and label to the same thing for simplicity
+                          updateOption(index, 'label', e.target.value);
+                          updateOption(index, 'value', e.target.value);
+                        }}
+                        placeholder="Option text (e.g., Excellent)"
+                        className="flex-1"
+                      />
+                      {hasScoring && (
+                        <SlInput
+                          type="number"
+                          value={option.score?.toString() || ''}
+                          onChange={(e) => updateOption(index, 'score', e.target.value)}
+                          placeholder="Score"
+                          className="w-20"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => optionKey && toggleAlertTrigger(optionKey)}
+                        disabled={!optionKey}
+                        className={`p-2 rounded-md transition-colors ${
+                          isAlertTrigger
+                            ? severity === 'critical'
+                              ? 'bg-red-100 text-red-600'
+                              : severity === 'warning'
+                              ? 'bg-yellow-100 text-yellow-600'
+                              : 'bg-blue-100 text-blue-600'
+                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200 disabled:opacity-50'
+                        }`}
+                        title={isAlertTrigger ? `Alert: ${severity}` : 'Click to enable alert'}
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </button>
+                      {isAlertTrigger && (
+                        <SlSelect
+                          value={severity}
+                          onValueChange={(val) => setOptionSeverity(optionKey, val as 'info' | 'warning' | 'critical')}
+                        >
+                          <SlSelectTrigger className="w-24">
+                            <SlSelectValue />
+                          </SlSelectTrigger>
+                          <SlSelectContent>
+                            <SlSelectItem value="info">Info</SlSelectItem>
+                            <SlSelectItem value="warning">Warning</SlSelectItem>
+                            <SlSelectItem value="critical">Critical</SlSelectItem>
+                          </SlSelectContent>
+                        </SlSelect>
+                      )}
+                      {options.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-500"
+                          onClick={() => removeOption(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Alert Configuration - for choice questions only (boolean has inline config) */}
+          {alertConfig.trigger_values && alertConfig.trigger_values.length > 0 && questionType !== 'boolean' && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-[var(--sl-text-primary)] mb-3">
+                <AlertTriangle className="h-4 w-4 inline mr-1 text-orange-500" />
+                Alert Configuration
+              </h4>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <SlLabel htmlFor="alert-message">Alert Message</SlLabel>
+                  <SlTextarea
+                    id="alert-message"
+                    value={alertConfig.alert_message || ''}
+                    onChange={(e) => setAlertConfig({ ...alertConfig, alert_message: e.target.value })}
+                    placeholder="e.g., Patient reported concerning symptoms - requires attention"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="text-xs text-[var(--sl-text-muted)] space-y-1">
+                  <p className="font-medium">Triggers configured:</p>
+                  {alertConfig.trigger_values.map((value) => {
+                    const severity = optionSeverities[value] || 'info';
+                    return (
+                      <div key={value} className="flex items-center gap-2">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                          severity === 'critical'
+                            ? 'bg-red-100 text-red-700'
+                            : severity === 'warning'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {severity}
+                        </span>
+                        <span>{value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <SlDialogFooter>
+          <Button variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!code || !text || addMutation.isPending || updateMutation.isPending}
+          >
+            {(addMutation.isPending || updateMutation.isPending)
+              ? 'Saving...'
+              : isEditing
+              ? 'Save Changes'
+              : 'Add Question'}
+          </Button>
+        </SlDialogFooter>
+      </SlDialogContent>
+    </SlDialog>
+  );
+}
+
+function QuestionnairePreview({ questionnaire }: { questionnaire: QuestionnaireTemplateDetail }) {
+  if (!questionnaire.questions || questionnaire.questions.length === 0) {
+    return (
+      <Card className="bg-[var(--sl-bg-card)] border-[var(--sl-border)]">
+        <CardContent className="py-8 text-center">
+          <p className="text-[var(--sl-text-muted)]">No questions to preview</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="bg-[var(--sl-bg-card)] border-[var(--sl-border)]">
+      <CardHeader>
+        <CardTitle className="text-[var(--sl-text-primary)]">{questionnaire.title}</CardTitle>
+        {questionnaire.description && (
+          <CardDescription className="text-[var(--sl-text-secondary)]">
+            {questionnaire.description}
+          </CardDescription>
+        )}
+        {questionnaire.estimated_minutes && (
+          <p className="text-sm text-[var(--sl-text-muted)]">
+            Estimated time: {questionnaire.estimated_minutes} minutes
+          </p>
+        )}
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {questionnaire.questions.map((question, index) => (
+            <PreviewQuestion key={question.id} question={question} index={index} />
+          ))}
+        </div>
+
+        {/* Submit button preview */}
+        <div className="mt-8 pt-6 border-t border-[var(--sl-border)]">
+          <Button className="w-full" disabled>
+            Submit Questionnaire
+          </Button>
+          <p className="text-xs text-center text-[var(--sl-text-muted)] mt-2">
+            Preview only - this button is not functional
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PreviewQuestion({ question, index }: { question: QuestionnaireQuestion; index: number }) {
+  const questionType = question.question_type;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="font-medium text-[var(--sl-text-primary)]">
+          {index + 1}. {question.text}
+          {question.is_required && <span className="text-red-500 ml-1">*</span>}
+        </p>
+        {question.help_text && (
+          <p className="text-sm text-[var(--sl-text-muted)] mt-1">{question.help_text}</p>
+        )}
+      </div>
+
+      {/* Render input based on question type */}
+      {questionType === 'boolean' && (
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="flex-1 py-3 px-4 border border-[var(--sl-border)] rounded-lg text-[var(--sl-text-primary)] hover:bg-[var(--sl-bg-hover)] transition-colors"
+          >
+            Yes
+          </button>
+          <button
+            type="button"
+            className="flex-1 py-3 px-4 border border-[var(--sl-border)] rounded-lg text-[var(--sl-text-primary)] hover:bg-[var(--sl-bg-hover)] transition-colors"
+          >
+            No
+          </button>
+        </div>
+      )}
+
+      {(questionType === 'single_choice' || questionType === 'multi_choice') && (
+        <div className="space-y-2">
+          {question.options && question.options.length > 0 ? (
+            question.options.map((option, idx) => (
+              <label
+                key={idx}
+                className="flex items-center gap-3 p-3 border border-[var(--sl-border)] rounded-lg cursor-pointer hover:bg-[var(--sl-bg-hover)] transition-colors"
+              >
+                <input
+                  type={questionType === 'single_choice' ? 'radio' : 'checkbox'}
+                  name={`preview-${question.id}`}
+                  disabled
+                  className={`h-4 w-4 text-blue-600 ${questionType === 'multi_choice' ? 'rounded' : ''}`}
+                />
+                <span className="text-[var(--sl-text-primary)]">{option.label || option.value}</span>
+              </label>
+            ))
+          ) : (
+            <p className="text-sm text-[var(--sl-text-muted)] italic">
+              No options configured for this question
+            </p>
+          )}
+        </div>
+      )}
+
+      {questionType === 'scale' && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm text-[var(--sl-text-muted)]">
+            <span>{question.validation?.min ?? 0}</span>
+            <span>{question.validation?.max ?? 10}</span>
+          </div>
+          <input
+            type="range"
+            min={question.validation?.min ?? 0}
+            max={question.validation?.max ?? 10}
+            disabled
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-center">
+            <span className="px-3 py-1 bg-[var(--sl-bg-hover)] rounded-lg text-[var(--sl-text-primary)] font-medium">
+              {Math.floor(((question.validation?.min ?? 0) + (question.validation?.max ?? 10)) / 2)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {questionType === 'number' && (
+        <input
+          type="number"
+          placeholder="Enter a number"
+          disabled
+          className="w-full p-3 border border-[var(--sl-border)] rounded-lg bg-[var(--sl-bg-card)] text-[var(--sl-text-primary)] placeholder-[var(--sl-text-muted)]"
+        />
+      )}
+
+      {questionType === 'text' && (
+        <textarea
+          placeholder="Enter your response..."
+          disabled
+          rows={3}
+          className="w-full p-3 border border-[var(--sl-border)] rounded-lg bg-[var(--sl-bg-card)] text-[var(--sl-text-primary)] placeholder-[var(--sl-text-muted)] resize-none"
+        />
+      )}
+    </div>
+  );
+}
+
+function QuestionnaireDetailSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Skeleton className="h-10 w-10 rounded-lg" />
+        <div>
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-48 mt-2" />
+        </div>
+      </div>
+
+      <Skeleton className="h-16 w-full rounded-lg" />
+
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+      </div>
+    </div>
+  );
+}

@@ -47,6 +47,11 @@ import {
   useAssignPatientPlan,
   useCancelPatientPlan,
 } from '@/hooks/api/use-sl-instruction-templates';
+import {
+  useQuestionnaires,
+  usePatientQuestionnaires,
+  useAssignQuestionnaire,
+} from '@/hooks/api/use-sl-questionnaires';
 import type { Alert, Patient, PatientSummary, PatientUpdate, VitalReading, VitalType } from '@/lib/api/types/sense-loop';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
 import { toast } from 'sonner';
@@ -667,19 +672,28 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
   const { mutate: updatePatient, isPending } = useUpdateSlPatient();
   const assignPlan = useAssignPatientPlan();
   const cancelPlan = useCancelPatientPlan();
+  const assignQuestionnaire = useAssignQuestionnaire();
   const { data: templatesData, isLoading: templatesLoading } = useInstructionTemplates({
     organization_id: organizationId || undefined,
     status: 'active',
     include_shared: true,
   });
+  const { data: questionnairesData, isLoading: questionnairesLoading } = useQuestionnaires({
+    organization_id: organizationId || undefined,
+    is_active: true,
+  });
   const { data: plansData } = usePatientPlans(patient.id, 'active');
+  const { data: patientQuestionnaires } = usePatientQuestionnaires(patient.id, 'in_progress');
 
-  const [formData, setFormData] = useState<Partial<PatientUpdate> & { instruction_template_id?: string }>({});
+  const [formData, setFormData] = useState<Partial<PatientUpdate> & { instruction_template_id?: string; questionnaire_id?: string }>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Get current active plan
   const currentPlan = plansData?.items?.[0];
   const currentTemplateId = currentPlan?.template_id || '';
+
+  // Get currently assigned questionnaire (if any pending)
+  const currentQuestionnaireId = patientQuestionnaires?.items?.[0]?.questionnaire_id || '';
 
   // Initialize form data when dialog opens
   useEffect(() => {
@@ -695,10 +709,11 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
         primary_diagnosis: patient.primary_diagnosis || '',
         surgery_date: patient.surgery_date || '',
         instruction_template_id: currentTemplateId,
+        questionnaire_id: currentQuestionnaireId,
       });
       setErrors({});
     }
-  }, [open, patient, currentTemplateId]);
+  }, [open, patient, currentTemplateId, currentQuestionnaireId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -762,6 +777,15 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
             },
           });
         }
+      }
+
+      // Handle questionnaire assignment (only assign new ones, don't remove existing)
+      const newQuestionnaireId = formData.questionnaire_id || '';
+      if (newQuestionnaireId && newQuestionnaireId !== currentQuestionnaireId) {
+        await assignQuestionnaire.mutateAsync({
+          patientId: patient.id,
+          questionnaireId: newQuestionnaireId,
+        });
       }
 
       onClose();
@@ -926,15 +950,37 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
                   </p>
                 )}
               </div>
+
+              <div className="sl-form-group">
+                <label className="sl-form-label">Questionnaire</label>
+                <select
+                  value={formData.questionnaire_id || ''}
+                  onChange={(e) => setFormData({ ...formData, questionnaire_id: e.target.value })}
+                  className="sl-select w-full"
+                  disabled={questionnairesLoading}
+                >
+                  <option value="">{questionnairesLoading ? 'Loading...' : 'Select questionnaire (optional)'}</option>
+                  {questionnairesData?.items?.map((questionnaire) => (
+                    <option key={questionnaire.id} value={questionnaire.id}>
+                      {questionnaire.title}
+                    </option>
+                  ))}
+                </select>
+                {currentQuestionnaireId && (
+                  <p className="text-xs text-[var(--sl-text-muted)] mt-1">
+                    Patient has an assigned questionnaire. Selecting a new one will add to their assignments.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={isPending || assignPlan.isPending || cancelPlan.isPending}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending || assignPlan.isPending || cancelPlan.isPending || assignQuestionnaire.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending || assignPlan.isPending || cancelPlan.isPending} className="bg-[var(--sl-brand)] hover:bg-[var(--sl-brand-dark)] text-white">
-              {isPending || assignPlan.isPending || cancelPlan.isPending ? (
+            <Button type="submit" disabled={isPending || assignPlan.isPending || cancelPlan.isPending || assignQuestionnaire.isPending} className="bg-[var(--sl-brand)] hover:bg-[var(--sl-brand-dark)] text-white">
+              {isPending || assignPlan.isPending || cancelPlan.isPending || assignQuestionnaire.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving...

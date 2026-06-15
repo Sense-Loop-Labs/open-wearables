@@ -327,11 +327,60 @@ class PatientInstructionPlanService:
 
         template_service = InstructionTemplateService(self.db)
 
-        # Get resolved content from template
-        resolved = template_service.get_resolved_content(plan.template)
+        # Get resolved content from template (with activities resolved)
+        content = template_service.get_resolved_content(plan.template)
 
-        # Apply patient customizations
-        return self._resolve_content(
-            type("Template", (), {"content": resolved})(),  # Duck type
-            plan.customizations,
-        )
+        # Apply patient customizations directly to the resolved content
+        customizations = plan.customizations
+        if not customizations:
+            return content
+
+        sections = content.get("sections", [])
+
+        # Apply section/item customizations
+        section_customizations = customizations.get("sections", {})
+        for section in sections:
+            section_id = section.get("id")
+            if section_id and section_id in section_customizations:
+                section_custom = section_customizations[section_id]
+
+                # Apply item customizations
+                item_customizations = section_custom.get("items", {})
+                for item in section.get("items", []):
+                    item_id = item.get("id")
+                    if item_id and item_id in item_customizations:
+                        item_custom = item_customizations[item_id]
+
+                        # Merge timing override
+                        if "timing" in item_custom:
+                            base_timing = item.get("timing", {})
+                            item["timing"] = {**base_timing, **item_custom["timing"]}
+
+                        # Merge other overrides
+                        for key in ["title", "description", "priority"]:
+                            if key in item_custom:
+                                item[key] = item_custom[key]
+
+        # Add custom items
+        added_items = customizations.get("added_items", [])
+        for added in added_items:
+            section_id = added.get("section_id")
+            item = added.get("item")
+            if section_id and item:
+                for section in sections:
+                    if section.get("id") == section_id:
+                        section.setdefault("items", []).append(item)
+                        break
+
+        # Remove items
+        removed_items = set(customizations.get("removed_items", []))
+        if removed_items:
+            for section in sections:
+                section["items"] = [
+                    item
+                    for item in section.get("items", [])
+                    if item.get("id") not in removed_items
+                ]
+
+        content["sections"] = sections
+        return content

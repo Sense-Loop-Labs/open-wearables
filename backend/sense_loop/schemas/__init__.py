@@ -69,6 +69,20 @@ from .instruction_template import (
     TaskActionResponse,
     DailyTasksResponse,
 )
+from .questionnaire import (
+    QuestionnaireCreate,
+    QuestionnaireUpdate,
+    QuestionnaireResponse,
+    QuestionnaireDetailResponse,
+    QuestionnaireListResponse,
+    QuestionCreate,
+    QuestionUpdate,
+    QuestionResponse,
+    QuestionReorderRequest,
+    QuestionnaireAssignRequest,
+    PatientQuestionnaireResponse,
+    PatientQuestionnaireListResponse,
+)
 
 __all__ = [
     # Patient
@@ -133,4 +147,17 @@ __all__ = [
     "TaskConfirmationResponse",
     "TaskActionResponse",
     "DailyTasksResponse",
+    # Questionnaires
+    "QuestionnaireCreate",
+    "QuestionnaireUpdate",
+    "QuestionnaireResponse",
+    "QuestionnaireDetailResponse",
+    "QuestionnaireListResponse",
+    "QuestionCreate",
+    "QuestionUpdate",
+    "QuestionResponse",
+    "QuestionReorderRequest",
+    "QuestionnaireAssignRequest",
+    "PatientQuestionnaireResponse",
+    "PatientQuestionnaireListResponse",
 ]
