@@ -125,7 +125,9 @@ export function useRetireActivityTemplate() {
 // Instruction Templates
 // ============================================================================
 
-export function useInstructionTemplates(params?: InstructionTemplateQueryParams) {
+export function useInstructionTemplates(
+  params?: InstructionTemplateQueryParams
+) {
   return useQuery({
     queryKey: queryKeys.sl.instructionTemplates.list(params),
     queryFn: () => slInstructionTemplatesService.getAll(params),
@@ -171,8 +173,13 @@ export function useUpdateInstructionTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: InstructionTemplateUpdate }) =>
-      slInstructionTemplatesService.update(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: InstructionTemplateUpdate;
+    }) => slInstructionTemplatesService.update(id, data),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sl.instructionTemplates.lists(),
@@ -326,6 +333,9 @@ export function useUpdatePatientPlan() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sl.patientPlans.detail(patientId, planId),
       });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sl.patientPlans.content(patientId, planId),
+      });
       toast.success('Instruction plan updated');
     },
     onError: (error: Error) => {
@@ -338,8 +348,13 @@ export function useCompletePatientPlan() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ patientId, planId }: { patientId: string; planId: string }) =>
-      slPatientPlansService.complete(patientId, planId),
+    mutationFn: ({
+      patientId,
+      planId,
+    }: {
+      patientId: string;
+      planId: string;
+    }) => slPatientPlansService.complete(patientId, planId),
     onSuccess: (_, { patientId, planId }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sl.patientPlans.list(patientId),

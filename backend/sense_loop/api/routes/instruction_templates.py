@@ -605,6 +605,7 @@ async def get_patient_plan_content(
         status=plan.status,
         effective_start=plan.effective_start,
         effective_end=plan.effective_end,
+        customizations=plan.customizations,
         content=content,
     )
 

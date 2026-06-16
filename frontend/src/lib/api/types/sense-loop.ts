@@ -317,7 +317,11 @@ export interface Alert {
 }
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
-export type AlertCategory = 'vital_sign' | 'questionnaire' | 'activity' | 'system';
+export type AlertCategory =
+  | 'vital_sign'
+  | 'questionnaire'
+  | 'activity'
+  | 'system';
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved' | 'escalated';
 
 export interface AlertQueryParams {
@@ -681,14 +685,14 @@ export interface PatientPlanAssign {
   template_id: string;
   effective_start?: string;
   effective_end?: string;
-  customizations?: Record<string, unknown>;
+  customizations?: PlanCustomizations;
   reference_date?: string;
   reference_type?: string;
   generate_tasks?: boolean;
 }
 
 export interface PatientPlanUpdate {
-  customizations?: Record<string, unknown>;
+  customizations?: PlanCustomizations;
   effective_end?: string;
   regenerate_tasks?: boolean;
 }
@@ -766,6 +770,69 @@ export type PaginatedPatientPlans = {
 };
 
 // ============================================================================
+// Patient Plan Customizations
+// ============================================================================
+
+export interface PlanItemCustomization {
+  timing?: Partial<TimingConfig>;
+  title?: string;
+  description?: string;
+}
+
+export interface PlanSectionCustomization {
+  items: {
+    [itemId: string]: PlanItemCustomization;
+  };
+}
+
+export interface AddedPlanItem {
+  id: string;
+  section_id: string;
+  title: string;
+  description?: string;
+  timing?: TimingConfig;
+}
+
+export interface PlanCustomizations {
+  sections?: {
+    [sectionId: string]: PlanSectionCustomization;
+  };
+  added_items?: AddedPlanItem[];
+  removed_items?: string[]; // Item IDs to disable
+  section_order?: string[]; // Section IDs in display order
+}
+
+export interface ResolvedPlanItem {
+  id: string;
+  type?: 'activity_ref' | 'custom';
+  activity_template_id?: string;
+  title: string;
+  description?: string;
+  timing?: TimingConfig;
+  activity?: ActivityTemplate;
+}
+
+export interface ResolvedPlanSection {
+  id: string;
+  title: string;
+  description?: string;
+  items: ResolvedPlanItem[];
+}
+
+export interface ResolvedPlanContent {
+  sections: ResolvedPlanSection[];
+}
+
+export interface PatientPlanContentResponse {
+  id: string;
+  patient_id: string;
+  template_title: string;
+  status: string;
+  customizations?: PlanCustomizations | null;
+  content: ResolvedPlanContent;
+}
+
+// ============================================================================
 // Questionnaire Templates
 // ============================================================================
 
@@ -802,7 +869,13 @@ export interface QuestionnaireQuestion {
   code: string;
   text: string;
   help_text?: string;
-  question_type: 'boolean' | 'single_choice' | 'multi_choice' | 'text' | 'number' | 'scale';
+  question_type:
+    | 'boolean'
+    | 'single_choice'
+    | 'multi_choice'
+    | 'text'
+    | 'number'
+    | 'scale';
   order: number;
   is_required: boolean;
   validation?: QuestionValidation;
@@ -940,4 +1013,44 @@ export interface PatientQuestionnaire {
 export interface PatientQuestionnaireList {
   items: PatientQuestionnaire[];
   total: number;
+}
+
+export interface QuestionnaireAnswerOption {
+  value: string;
+  label: string;
+  score?: number;
+}
+
+export interface QuestionnaireAnswer {
+  id: string;
+  question_id: string;
+  question_code: string;
+  question_text: string;
+  question_type: string;
+  question_help_text?: string;
+  question_options?: QuestionnaireAnswerOption[];
+  question_is_required: boolean;
+  question_order: number;
+  value_text?: string;
+  value_number?: number;
+  value_boolean?: boolean;
+  value_json?: Record<string, unknown>;
+  skipped: boolean;
+  score?: number;
+  created_at: string;
+}
+
+export interface QuestionnaireResponseDetail {
+  id: string;
+  patient_id: string;
+  questionnaire_id: string;
+  questionnaire_title: string;
+  questionnaire_description?: string;
+  status: string;
+  total_score?: number;
+  score_interpretation?: string;
+  created_at: string;
+  completed_at?: string;
+  due_at?: string;
+  answers: QuestionnaireAnswer[];
 }

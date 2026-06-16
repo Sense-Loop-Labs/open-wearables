@@ -1,6 +1,7 @@
 """Mobile data endpoints for iOS app."""
 
-from datetime import datetime, timedelta, date, timezone as tz
+from datetime import date, datetime, timedelta
+from datetime import timezone as tz
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -101,9 +102,7 @@ def _get_bp_status(systolic: int, diastolic: int) -> str:
     # High (Stage 2): systolic >= 140 OR diastolic >= 90
     if systolic >= 140 or diastolic >= 90:
         return "high"
-    elif systolic >= 130 or diastolic >= 80:
-        return "elevated"
-    elif systolic >= 120:
+    if systolic >= 130 or diastolic >= 80 or systolic >= 120:
         return "elevated"
     return "normal"
 
@@ -114,25 +113,25 @@ def _get_vital_status(value: float, vital_type: str) -> str:
     if vital_type == "heart_rate":
         if value < 50:
             return "low"
-        elif value > 100:
+        if value > 100:
             return "high"
         return "normal"
-    elif vital_type == "temperature":
+    if vital_type == "temperature":
         if value > 100.4:
             return "elevated"
-        elif value > 101.5:
+        if value > 101.5:
             return "high"
         return "normal"
-    elif vital_type == "hrv":
+    if vital_type == "hrv":
         if value >= 50:
             return "healthy"
-        elif value >= 30:
+        if value >= 30:
             return "fair"
         return "poor"
-    elif vital_type == "resting_hr":
+    if vital_type == "resting_hr":
         if value < 50:
             return "low"
-        elif value > 80:
+        if value > 80:
             return "high"
         return "normal"
     return "normal"
@@ -143,7 +142,7 @@ def _get_sleep_quality(duration_minutes: int) -> str:
     hours = duration_minutes / 60
     if hours >= 7:
         return "good"
-    elif hours >= 5:
+    if hours >= 5:
         return "fair"
     return "poor"
 
@@ -469,8 +468,9 @@ async def get_summary(
     daily_exercise: dict[str, float] = {}
 
     if ow_user_id:
-        from app.models.event_record import EventRecord
         from collections import defaultdict
+
+        from app.models.event_record import EventRecord
 
         # Query workout records for last 7 days
         workout_stmt = (
@@ -590,6 +590,8 @@ async def get_care_plan(
                 is_required=q.is_required,
                 options=q.options,
                 validation=q.validation,
+                condition=q.condition,
+                order=q.order,
             )
             for q in questionnaire.questions
             if q.is_active
@@ -700,7 +702,6 @@ async def get_tasks(
     """
     from sense_loop.schemas.instruction_template import (
         DailyTasksResponse,
-        TaskResponse,
     )
     from sense_loop.services import TaskCompletionService
 
@@ -970,6 +971,7 @@ async def get_instruction_plan_content(
         "id": str(plan.id),
         "template_title": plan.template.title if plan.template else None,
         "status": plan.status,
+        "customizations": plan.customizations,
         "content": content,
     }
 
@@ -1017,6 +1019,7 @@ async def register_device(
     Updates existing device or creates new registration.
     """
     from uuid import uuid4
+
     from sense_loop.models import PatientDevice
 
     # Check if device token already exists

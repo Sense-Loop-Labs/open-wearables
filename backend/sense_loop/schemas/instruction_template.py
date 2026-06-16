@@ -215,6 +215,7 @@ class PatientPlanContent(BaseModel):
     status: str
     effective_start: datetime
     effective_end: datetime | None
+    customizations: dict | None = None
     content: dict
 
 
