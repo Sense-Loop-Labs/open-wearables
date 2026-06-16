@@ -44,7 +44,8 @@ sense_loop/
 │   ├── alerts.py         # Alert management
 │   ├── clinicians.py     # Clinician management + invites
 │   ├── organizations.py  # Org management
-│   └── dashboard.py      # Dashboard aggregations
+│   ├── dashboard.py      # Dashboard aggregations
+│   └── health.py         # Celery health check for monitoring
 │
 ├── access/               # RBAC system
 │   ├── permissions.py    # Permission constants
@@ -136,6 +137,10 @@ All tables use `sl_` prefix:
 - `POST /api/v1/sl/clinicians/invite`
 - `GET /api/v1/sl/dashboard/overview`
 
+### Health Check (no auth required)
+- `GET /api/v1/sl/health/celery` - Full Celery worker and queue status
+- `GET /api/v1/sl/health/celery/simple` - Simple pass/fail for uptime monitors
+
 ## Setup
 
 1. Enable extension in `.env`:
@@ -163,3 +168,71 @@ The alert engine (`services/alert_engine.py`) is designed for FDA SaMD Class II 
 - **Auditable**: All evaluations can be reconstructed
 
 Changes to the alert engine require design review and regulatory approval.
+
+## Operations & Monitoring
+
+### Celery Health Check
+
+The `/api/v1/sl/health/celery` endpoint monitors Celery worker health and queue status.
+
+**Full endpoint** returns detailed status:
+```json
+{
+  "status": "healthy",
+  "workers": [
+    {"name": "celery@hostname", "status": "online", "queues": ["default", "sdk_sync", ...]}
+  ],
+  "queues": [
+    {"name": "default", "length": 0, "status": "ok"},
+    {"name": "sdk_sync", "length": 0, "status": "ok"}
+  ],
+  "message": "1 worker(s) online, all queues clear",
+  "checked_at": "2026-06-16T18:48:53Z"
+}
+```
+
+**Simple endpoint** (`/api/v1/sl/health/celery/simple`) for uptime monitors:
+```json
+{"status": "healthy", "message": "1 worker(s) online, all queues clear", "workers_online": 1}
+```
+
+**Status values:**
+- `healthy` - All workers online, no queue backlog
+- `degraded` - Some workers offline OR queue length > 100 (warning)
+- `unhealthy` - No workers online OR queue length > 500 (critical)
+
+### Monitoring Setup
+
+1. **External uptime monitoring** (Pingdom, UptimeRobot, etc.):
+   - Monitor `/api/v1/sl/health/celery/simple`
+   - Alert when `status` is not `healthy`
+
+2. **Cron-based alerting** (example):
+   ```bash
+   # Check every 5 minutes, alert if unhealthy
+   */5 * * * * curl -s http://localhost:8001/api/v1/sl/health/celery/simple | \
+     jq -e '.status == "healthy"' > /dev/null || \
+     echo "Celery unhealthy" | mail -s "Alert: Celery Down" ops@example.com
+   ```
+
+3. **Process supervision** - Use systemd, supervisord, or Docker restart policies to auto-restart workers:
+   ```yaml
+   # docker-compose.yml example
+   celery-worker:
+     command: celery -A app.main:celery_app worker --loglevel=info
+     restart: always
+     healthcheck:
+       test: ["CMD", "celery", "-A", "app.main:celery_app", "inspect", "ping", "-t", "10"]
+       interval: 30s
+       timeout: 10s
+       retries: 3
+   ```
+
+### Queue Thresholds
+
+| Queue | Warning (>100) | Critical (>500) |
+|-------|----------------|-----------------|
+| `default` | Tasks backing up | Workers likely down |
+| `sdk_sync` | HealthKit syncs delayed | Data not being processed |
+| `garmin_sync` | Garmin syncs delayed | Data not being processed |
+| `webhook_sync` | Webhooks delayed | External systems not notified |
