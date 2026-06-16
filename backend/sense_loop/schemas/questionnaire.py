@@ -171,6 +171,8 @@ class QuestionnaireResponse(BaseModel):
 
     id: UUID
     organization_id: UUID | None
+    patient_id: UUID | None = None  # If set, this is a patient-specific copy
+    source_template_id: UUID | None = None  # The template this was copied from
     title: str
     code: str
     description: str | None
@@ -252,6 +254,59 @@ class PatientQuestionnaireListResponse(BaseModel):
     """List of questionnaire assignments for a patient."""
 
     items: list[PatientQuestionnaireResponse]
+    total: int
+
+
+# =============================================================================
+# Patient Questionnaire Copy Schemas
+# =============================================================================
+
+
+class CopyQuestionnaireRequest(BaseModel):
+    """Request to copy a questionnaire template for a patient."""
+
+    template_id: UUID
+
+
+class PatientQuestionnaireDetailResponse(BaseModel):
+    """Response for a patient's questionnaire copy with full details."""
+
+    id: UUID
+    patient_id: UUID
+    source_template_id: UUID | None
+    source_template_title: str | None = None
+    organization_id: UUID | None
+    title: str
+    code: str
+    description: str | None
+    questionnaire_type: str
+    category: str
+    estimated_minutes: int | None
+    allow_skip: bool
+    require_completion: bool
+    has_scoring: bool
+    scoring_config: dict | None
+    is_active: bool
+    version: int
+    question_count: int = 0
+    questions: list[QuestionResponse] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    # Response status fields
+    latest_response_id: UUID | None = None
+    latest_response_status: str | None = None  # in_progress, completed
+    latest_response_completed_at: datetime | None = None
+    has_pending_response: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class PatientQuestionnaireCopyListResponse(BaseModel):
+    """List of patient-specific questionnaire copies."""
+
+    items: list[PatientQuestionnaireDetailResponse]
     total: int
 
 

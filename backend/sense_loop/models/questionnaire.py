@@ -11,7 +11,7 @@ from app.mappings import PrimaryKey, str_50, str_100, str_255
 
 
 class Questionnaire(BaseDbModel):
-    """Assessment questionnaire template."""
+    """Assessment questionnaire template or patient-specific copy."""
 
     __tablename__ = "sl_questionnaire"
 
@@ -23,6 +23,18 @@ class Questionnaire(BaseDbModel):
         nullable=True,
         index=True,
     )  # None = system-wide questionnaire
+
+    # Patient-specific copy fields
+    patient_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("sl_patient.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )  # If set, this is a patient-specific questionnaire (not a template)
+
+    source_template_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("sl_questionnaire.id", ondelete="SET NULL"),
+        nullable=True,
+    )  # The template this was copied from (for lineage tracking)
 
     # Questionnaire info
     title: Mapped[str_255]
@@ -57,6 +69,13 @@ class Questionnaire(BaseDbModel):
     # Relationships
     organization: Mapped["Organization | None"] = relationship(
         foreign_keys=[organization_id],
+    )
+    patient: Mapped["Patient | None"] = relationship(
+        foreign_keys=[patient_id],
+    )
+    source_template: Mapped["Questionnaire | None"] = relationship(
+        foreign_keys=[source_template_id],
+        remote_side="Questionnaire.id",
     )
     questions: Mapped[list["QuestionnaireQuestion"]] = relationship(
         back_populates="questionnaire",

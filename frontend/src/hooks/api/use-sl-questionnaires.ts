@@ -277,3 +277,75 @@ export function useQuestionnaireResponse(responseId: string | undefined) {
     enabled: !!responseId,
   });
 }
+
+// ============================================================================
+// Patient Questionnaire Copies
+// ============================================================================
+
+export function usePatientQuestionnaireCopies(patientId: string) {
+  return useQuery({
+    queryKey: ['sl', 'patientQuestionnaireCopies', patientId],
+    queryFn: () => slQuestionnairesService.getPatientQuestionnaireCopies(patientId),
+    enabled: !!patientId,
+  });
+}
+
+export function usePatientQuestionnaireCopy(patientId: string, questionnaireId: string) {
+  return useQuery({
+    queryKey: ['sl', 'patientQuestionnaireCopy', patientId, questionnaireId],
+    queryFn: () => slQuestionnairesService.getPatientQuestionnaireCopy(patientId, questionnaireId),
+    enabled: !!patientId && !!questionnaireId,
+  });
+}
+
+export function useCopyQuestionnaireForPatient() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      patientId,
+      templateId,
+    }: {
+      patientId: string;
+      templateId: string;
+    }) => slQuestionnairesService.copyQuestionnaireForPatient(patientId, templateId),
+    onSuccess: (_, { patientId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['sl', 'patientQuestionnaireCopies', patientId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['sl', 'patientQuestionnaires', patientId],
+      });
+      toast.success('Questionnaire copied for patient');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to copy questionnaire');
+    },
+  });
+}
+
+export function useSendQuestionnaireToPatient() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      patientId,
+      questionnaireId,
+    }: {
+      patientId: string;
+      questionnaireId: string;
+    }) => slQuestionnairesService.generateResponseForPatientQuestionnaire(patientId, questionnaireId),
+    onSuccess: (_, { patientId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['sl', 'patientQuestionnaireCopies', patientId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['sl', 'patientQuestionnaires', patientId],
+      });
+      toast.success('Questionnaire sent to patient');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to send questionnaire');
+    },
+  });
+}

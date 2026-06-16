@@ -608,3 +608,104 @@ class QuestionnaireService:
             .limit(1)
         )
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def copy_for_patient(
+        self,
+        template_id: UUID,
+        patient_id: UUID,
+    ) -> Questionnaire:
+        """Create a patient-specific copy of a questionnaire template.
+
+        Args:
+            template_id: ID of the template questionnaire to copy
+            patient_id: ID of the patient to assign the copy to
+
+        Returns:
+            The newly created patient-specific questionnaire copy
+        """
+        # Get template with questions
+        template = self.get_questionnaire_by_id(template_id)
+        if not template:
+            raise ValueError(f"Questionnaire template {template_id} not found")
+
+        # Check if a copy already exists for this patient and template
+        existing = self.db.execute(
+            select(Questionnaire).where(
+                Questionnaire.patient_id == patient_id,
+                Questionnaire.source_template_id == template_id,
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            return existing
+
+        # Create a unique code for the patient copy
+        short_patient_id = str(patient_id)[:8]
+        copy_code = f"{template.code}_p{short_patient_id}"
+
+        # Create copy with patient_id set
+        copy = Questionnaire(
+            id=uuid4(),
+            patient_id=patient_id,
+            source_template_id=template_id,
+            organization_id=template.organization_id,
+            title=template.title,
+            code=copy_code,
+            description=template.description,
+            questionnaire_type=template.questionnaire_type,
+            category=template.category,
+            estimated_minutes=template.estimated_minutes,
+            allow_skip=template.allow_skip,
+            require_completion=template.require_completion,
+            has_scoring=template.has_scoring,
+            scoring_config=template.scoring_config,
+            is_active=True,
+            version=1,
+        )
+
+        self.db.add(copy)
+        self.db.flush()
+
+        # Copy questions
+        for q in template.questions:
+            copy_question = QuestionnaireQuestion(
+                id=uuid4(),
+                questionnaire_id=copy.id,
+                code=q.code,
+                text=q.text,
+                help_text=q.help_text,
+                question_type=q.question_type,
+                order=q.order,
+                is_required=q.is_required,
+                validation=q.validation,
+                options=q.options,
+                condition=q.condition,
+                score_weight=q.score_weight,
+                alert_config=q.alert_config,
+                is_active=q.is_active,
+            )
+            self.db.add(copy_question)
+
+        self.db.flush()
+
+        logger.info(
+            "Created patient questionnaire copy %s from template %s for patient %s",
+            copy.id,
+            template_id,
+            patient_id,
+        )
+
+        return copy
+
+    def get_patient_questionnaires(
+        self,
+        patient_id: UUID,
+    ) -> list[Questionnaire]:
+        """Get all patient-specific questionnaire copies for a patient."""
+        stmt = (
+            select(Questionnaire)
+            .where(Questionnaire.patient_id == patient_id)
+            .options(joinedload(Questionnaire.questions))
+            .order_by(Questionnaire.created_at.desc())
+        )
+        return list(self.db.execute(stmt).unique().scalars().all())

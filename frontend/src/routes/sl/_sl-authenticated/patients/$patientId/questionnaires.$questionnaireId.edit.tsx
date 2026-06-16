@@ -1,3 +1,8 @@
+/**
+ * Patient Questionnaire Editor Page
+ * Allows editing of a patient-specific questionnaire copy
+ */
+
 import { useState, useEffect } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import {
@@ -23,20 +28,11 @@ import {
   GripVertical,
   Trash2,
   AlertTriangle,
-  CheckCircle,
-  Archive,
+  Info,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 
 import { SlInput } from '@/components/sl/ui/sl-input';
 import { SlTextarea } from '@/components/sl/ui/sl-textarea';
@@ -60,19 +56,18 @@ import {
 
 import {
   useQuestionnaire,
-  useActivateQuestionnaire,
-  useRetireQuestionnaire,
   useAddQuestion,
   useUpdateQuestion,
   useDeleteQuestion,
   useReorderQuestions,
 } from '@/hooks/api/use-sl-questionnaires';
-import type { QuestionnaireQuestion, QuestionOption, QuestionAlertConfig, QuestionnaireTemplateDetail } from '@/lib/api/types/sense-loop';
+import { useSlPatient } from '@/hooks/api/use-sl-patients';
+import type { QuestionnaireQuestion, QuestionOption, QuestionAlertConfig } from '@/lib/api/types/sense-loop';
 
 export const Route = createFileRoute(
-  '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId'
+  '/sl/_sl-authenticated/patients/$patientId/questionnaires/$questionnaireId/edit'
 )({
-  component: QuestionnaireDetailPage,
+  component: PatientQuestionnaireEditorPage,
 });
 
 const QUESTION_TYPES = [
@@ -84,16 +79,14 @@ const QUESTION_TYPES = [
   { value: 'text', label: 'Text Input' },
 ];
 
-function QuestionnaireDetailPage() {
-  const { questionnaireId } = Route.useParams();
+function PatientQuestionnaireEditorPage() {
+  const { patientId, questionnaireId } = Route.useParams();
   const navigate = useNavigate();
 
-  const { data: questionnaire, isLoading, error } = useQuestionnaire(questionnaireId);
-  const activateMutation = useActivateQuestionnaire();
-  const retireMutation = useRetireQuestionnaire();
+  const { data: patient, isLoading: patientLoading } = useSlPatient(patientId);
+  const { data: questionnaire, isLoading: questionnaireLoading, error } = useQuestionnaire(questionnaireId);
   const reorderMutation = useReorderQuestions();
 
-  const [activeTab, setActiveTab] = useState('content');
   const [isAddQuestionDialogOpen, setIsAddQuestionDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionnaireQuestion | null>(null);
 
@@ -127,16 +120,22 @@ function QuestionnaireDetailPage() {
     }
   };
 
+  const isLoading = patientLoading || questionnaireLoading;
+
   if (isLoading) {
-    return <QuestionnaireDetailSkeleton />;
+    return <EditorSkeleton />;
   }
 
-  if (error || !questionnaire) {
+  if (error || !questionnaire || !patient) {
     return (
       <div className="text-center py-12">
         <p className="text-red-500">Failed to load questionnaire</p>
-        <Button variant="outline" onClick={() => navigate({ to: '/sl/instruction-templates' })} className="mt-4">
-          Go Back
+        <Button
+          variant="outline"
+          onClick={() => navigate({ to: '/sl/patients/$patientId', params: { patientId } })}
+          className="mt-4"
+        >
+          Back to Patient
         </Button>
       </div>
     );
@@ -148,134 +147,118 @@ function QuestionnaireDetailPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
-            to="/sl/instruction-templates"
+            to="/sl/patients/$patientId"
+            params={{ patientId }}
             className="p-2 hover:bg-[var(--sl-bg-hover)] rounded-lg transition-colors"
           >
             <ArrowLeft className="h-5 w-5 text-[var(--sl-text-secondary)]" />
           </Link>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold text-[var(--sl-text-primary)]">
-                {questionnaire.title}
-              </h1>
-              <SlBadge variant={questionnaire.is_active ? 'default' : 'secondary'}>
-                {questionnaire.is_active ? 'Active' : 'Inactive'}
-              </SlBadge>
+            <div className="flex items-center gap-2 text-sm text-[var(--sl-text-secondary)]">
+              <Link to="/sl/patients" className="hover:text-[var(--sl-text-primary)]">
+                Patients
+              </Link>
+              <span>/</span>
+              <Link
+                to="/sl/patients/$patientId"
+                params={{ patientId }}
+                className="hover:text-[var(--sl-text-primary)]"
+              >
+                {patient.full_name}
+              </Link>
+              <span>/</span>
+              <span className="text-[var(--sl-text-primary)]">{questionnaire.title}</span>
             </div>
-            <p className="text-sm text-[var(--sl-text-secondary)] mt-1">
-              {questionnaire.description || 'No description'} &middot; Code: {questionnaire.code}
-            </p>
+            <h1 className="text-2xl font-semibold text-[var(--sl-text-primary)] mt-1">
+              Edit Questionnaire
+            </h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!questionnaire.is_active ? (
-            <Button
-              variant="outline"
-              onClick={() => activateMutation.mutate(questionnaireId)}
-              disabled={activateMutation.isPending}
-            >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Activate
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => retireMutation.mutate(questionnaireId)}
-              disabled={retireMutation.isPending}
-              className="text-red-600 hover:text-red-700"
-            >
-              <Archive className="h-4 w-4 mr-2" />
-              Retire
-            </Button>
-          )}
-          <Button onClick={() => setIsAddQuestionDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Question
-          </Button>
+        <Button onClick={() => setIsAddQuestionDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Question
+        </Button>
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+        <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-blue-800">
+          <p className="font-medium">Patient-Specific Questionnaire</p>
+          <p className="mt-1">
+            This is a customized copy for {patient.full_name}. Changes here will not affect the
+            original template.
+          </p>
         </div>
       </div>
 
-      {/* Content Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="content" className="mt-4 space-y-6">
-          {/* Questionnaire Info */}
-          <div className="bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-[var(--sl-text-muted)]">Type:</span>
-                <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
-                  {questionnaire.questionnaire_type.replace('_', ' ')}
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--sl-text-muted)]">Category:</span>
-                <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
-                  {questionnaire.category}
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--sl-text-muted)]">Questions:</span>
-                <span className="ml-2 text-[var(--sl-text-primary)]">
-                  {questionnaire.question_count}
-                </span>
-              </div>
-              <div>
-                <span className="text-[var(--sl-text-muted)]">Scoring:</span>
-                <span className="ml-2 text-[var(--sl-text-primary)]">
-                  {questionnaire.has_scoring ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            </div>
+      {/* Questionnaire Info */}
+      <div className="bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <span className="text-[var(--sl-text-muted)]">Type:</span>
+            <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
+              {questionnaire.questionnaire_type.replace('_', ' ')}
+            </span>
           </div>
-
-          {/* Questions List */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-medium text-[var(--sl-text-primary)]">Questions</h2>
-
-            {questionnaire.questions.length === 0 ? (
-              <div className="text-center py-12 bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg">
-                <p className="text-[var(--sl-text-muted)]">No questions yet</p>
-                <Button onClick={() => setIsAddQuestionDialogOpen(true)} className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add First Question
-                </Button>
-              </div>
-            ) : (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={questionnaire.questions.map((q) => q.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-3">
-                    {questionnaire.questions.map((question, index) => (
-                      <SortableQuestionCard
-                        key={question.id}
-                        question={question}
-                        index={index}
-                        onEdit={() => setEditingQuestion(question)}
-                        questionnaireId={questionnaireId}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
+          <div>
+            <span className="text-[var(--sl-text-muted)]">Category:</span>
+            <span className="ml-2 text-[var(--sl-text-primary)] capitalize">
+              {questionnaire.category}
+            </span>
           </div>
-        </TabsContent>
+          <div>
+            <span className="text-[var(--sl-text-muted)]">Questions:</span>
+            <span className="ml-2 text-[var(--sl-text-primary)]">
+              {questionnaire.question_count}
+            </span>
+          </div>
+          <div>
+            <span className="text-[var(--sl-text-muted)]">Scoring:</span>
+            <span className="ml-2 text-[var(--sl-text-primary)]">
+              {questionnaire.has_scoring ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+        </div>
+      </div>
 
-        <TabsContent value="preview" className="mt-4">
-          <QuestionnairePreview questionnaire={questionnaire} />
-        </TabsContent>
-      </Tabs>
+      {/* Questions List */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-medium text-[var(--sl-text-primary)]">Questions</h2>
+
+        {questionnaire.questions.length === 0 ? (
+          <div className="text-center py-12 bg-[var(--sl-bg-card)] border border-[var(--sl-border)] rounded-lg">
+            <p className="text-[var(--sl-text-muted)]">No questions yet</p>
+            <Button onClick={() => setIsAddQuestionDialogOpen(true)} className="mt-4">
+              <Plus className="h-4 w-4 mr-2" />
+              Add First Question
+            </Button>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={questionnaire.questions.map((q) => q.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-3">
+                {questionnaire.questions.map((question, index) => (
+                  <SortableQuestionCard
+                    key={question.id}
+                    question={question}
+                    index={index}
+                    onEdit={() => setEditingQuestion(question)}
+                    questionnaireId={questionnaireId}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
 
       {/* Add Question Dialog */}
       <QuestionFormDialog
@@ -326,7 +309,7 @@ function SortableQuestionCard({
   };
 
   const deleteMutation = useDeleteQuestion();
-  const hasAlertConfig = question.alert_config && (question.alert_config.trigger_values?.length > 0 || question.alert_config.alert_on_any_value);
+  const hasAlertConfig = question.alert_config && ((question.alert_config.trigger_values?.length ?? 0) > 0 || question.alert_config.alert_on_any_value);
 
   return (
     <div
@@ -465,23 +448,18 @@ function QuestionFormDialog({
   const [alertConfig, setAlertConfig] = useState<QuestionAlertConfig>(
     question?.alert_config || { trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false }
   );
-  // Per-option severity tracking
   const [optionSeverities, setOptionSeverities] = useState<Record<string, 'info' | 'warning' | 'critical'>>(
     question?.alert_config?.severity_by_value || {}
   );
-
-  // Scale validation
   const [scaleMin, setScaleMin] = useState(question?.validation?.min?.toString() || '0');
   const [scaleMax, setScaleMax] = useState(question?.validation?.max?.toString() || '10');
 
   const showOptions = ['single_choice', 'multi_choice'].includes(questionType);
   const showScale = questionType === 'scale';
 
-  // Sync form state when dialog opens
   useEffect(() => {
     if (open) {
       if (question) {
-        // Editing existing question - populate form with question data
         setCode(question.code || '');
         setText(question.text || '');
         setHelpText(question.help_text || '');
@@ -493,17 +471,7 @@ function QuestionFormDialog({
         setScaleMin(question.validation?.min?.toString() || '0');
         setScaleMax(question.validation?.max?.toString() || '10');
       } else {
-        // New question - reset form
-        setCode('');
-        setText('');
-        setHelpText('');
-        setQuestionType('single_choice');
-        setIsRequired(true);
-        setOptions([{ value: '', label: '', score: undefined }]);
-        setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false });
-        setOptionSeverities({});
-        setScaleMin('0');
-        setScaleMax('10');
+        resetForm();
       }
     }
   }, [open, question]);
@@ -538,17 +506,17 @@ function QuestionFormDialog({
       options: showOptions
         ? options.filter((o) => o.value).map((o, idx) => ({
             value: o.value,
-            label: o.label || o.value,  // Use value as label if label is empty
+            label: o.label || o.value,
             score: hasScoring ? (o.score ?? idx) : undefined,
           }))
         : undefined,
       validation: showScale
         ? { min: parseFloat(scaleMin), max: parseFloat(scaleMax) }
         : undefined,
-      alert_config: (alertConfig.trigger_values?.length > 0 || alertConfig.alert_on_any_value)
+      alert_config: ((alertConfig.trigger_values?.length ?? 0) > 0 || alertConfig.alert_on_any_value)
         ? {
-            trigger_values: alertConfig.trigger_values?.length > 0 ? alertConfig.trigger_values : undefined,
-            alert_severity: alertConfig.alert_severity as 'info' | 'warning' | 'critical',
+            trigger_values: (alertConfig.trigger_values?.length ?? 0) > 0 ? alertConfig.trigger_values : undefined,
+            alert_severity: (alertConfig.alert_severity || 'warning') as 'info' | 'warning' | 'critical',
             alert_message: alertConfig.alert_message || undefined,
             severity_by_value: Object.keys(optionSeverities).length > 0 ? optionSeverities : undefined,
             alert_on_any_value: alertConfig.alert_on_any_value || undefined,
@@ -607,14 +575,11 @@ function QuestionFormDialog({
   const toggleAlertTrigger = (value: string) => {
     const currentTriggers = alertConfig.trigger_values || [];
     if (currentTriggers.includes(value)) {
-      // Remove trigger
       setAlertConfig({ ...alertConfig, trigger_values: currentTriggers.filter((v) => v !== value) });
-      // Remove severity for this value
       const newSeverities = { ...optionSeverities };
       delete newSeverities[value];
       setOptionSeverities(newSeverities);
     } else {
-      // Add trigger with default severity of 'info'
       setAlertConfig({ ...alertConfig, trigger_values: [...currentTriggers, value] });
       setOptionSeverities({ ...optionSeverities, [value]: 'info' });
     }
@@ -630,7 +595,7 @@ function QuestionFormDialog({
         <SlDialogHeader>
           <SlDialogTitle>{isEditing ? 'Edit Question' : 'Add Question'}</SlDialogTitle>
           <SlDialogDescription>
-            {isEditing ? 'Update the question details' : 'Add a new question to the questionnaire'}
+            {isEditing ? 'Update the question details' : 'Add a new question to this patient\'s questionnaire'}
           </SlDialogDescription>
         </SlDialogHeader>
 
@@ -809,7 +774,6 @@ function QuestionFormDialog({
                   )}
                 </div>
               </div>
-              {/* Alert message for boolean */}
               {alertConfig.trigger_values && alertConfig.trigger_values.length > 0 && (
                 <div className="mt-4 space-y-2">
                   <SlLabel htmlFor="boolean-alert-message">Alert Message</SlLabel>
@@ -846,7 +810,7 @@ function QuestionFormDialog({
                 {alertConfig.alert_on_any_value && (
                   <SlSelect
                     value={alertConfig.alert_severity || 'warning'}
-                    onValueChange={(val) => setAlertConfig({ ...alertConfig, alert_severity: val })}
+                    onValueChange={(val) => setAlertConfig({ ...alertConfig, alert_severity: val as 'info' | 'warning' | 'critical' })}
                   >
                     <SlSelectTrigger className="w-28">
                       <SlSelectValue />
@@ -946,7 +910,7 @@ function QuestionFormDialog({
             </div>
           )}
 
-          {/* Alert Configuration - for choice questions only (boolean has inline config) */}
+          {/* Alert Message */}
           {alertConfig.trigger_values && alertConfig.trigger_values.length > 0 && questionType !== 'boolean' && (
             <div className="border-t pt-4">
               <h4 className="text-sm font-medium text-[var(--sl-text-primary)] mb-3">
@@ -969,17 +933,17 @@ function QuestionFormDialog({
                 <div className="text-xs text-[var(--sl-text-muted)] space-y-1">
                   <p className="font-medium">Triggers configured:</p>
                   {alertConfig.trigger_values.map((value) => {
-                    const severity = optionSeverities[value] || 'info';
+                    const valueSeverity = optionSeverities[value] || 'info';
                     return (
                       <div key={value} className="flex items-center gap-2">
                         <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                          severity === 'critical'
+                          valueSeverity === 'critical'
                             ? 'bg-red-100 text-red-700'
-                            : severity === 'warning'
+                            : valueSeverity === 'warning'
                             ? 'bg-yellow-100 text-yellow-700'
                             : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {severity}
+                          {valueSeverity}
                         </span>
                         <span>{value}</span>
                       </div>
@@ -1011,164 +975,18 @@ function QuestionFormDialog({
   );
 }
 
-function QuestionnairePreview({ questionnaire }: { questionnaire: QuestionnaireTemplateDetail }) {
-  if (!questionnaire.questions || questionnaire.questions.length === 0) {
-    return (
-      <Card className="bg-[var(--sl-bg-card)] border-[var(--sl-border)]">
-        <CardContent className="py-8 text-center">
-          <p className="text-[var(--sl-text-muted)]">No questions to preview</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="bg-[var(--sl-bg-card)] border-[var(--sl-border)]">
-      <CardHeader>
-        <CardTitle className="text-[var(--sl-text-primary)]">{questionnaire.title}</CardTitle>
-        {questionnaire.description && (
-          <CardDescription className="text-[var(--sl-text-secondary)]">
-            {questionnaire.description}
-          </CardDescription>
-        )}
-        {questionnaire.estimated_minutes && (
-          <p className="text-sm text-[var(--sl-text-muted)]">
-            Estimated time: {questionnaire.estimated_minutes} minutes
-          </p>
-        )}
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {questionnaire.questions.map((question, index) => (
-            <PreviewQuestion key={question.id} question={question} index={index} />
-          ))}
-        </div>
-
-        {/* Submit button preview */}
-        <div className="mt-8 pt-6 border-t border-[var(--sl-border)]">
-          <Button className="w-full" disabled>
-            Submit Questionnaire
-          </Button>
-          <p className="text-xs text-center text-[var(--sl-text-muted)] mt-2">
-            Preview only - this button is not functional
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PreviewQuestion({ question, index }: { question: QuestionnaireQuestion; index: number }) {
-  const questionType = question.question_type;
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <p className="font-medium text-[var(--sl-text-primary)]">
-          {index + 1}. {question.text}
-          {question.is_required && <span className="text-red-500 ml-1">*</span>}
-        </p>
-        {question.help_text && (
-          <p className="text-sm text-[var(--sl-text-muted)] mt-1">{question.help_text}</p>
-        )}
-      </div>
-
-      {/* Render input based on question type */}
-      {questionType === 'boolean' && (
-        <div className="flex gap-3">
-          <button
-            type="button"
-            className="flex-1 py-3 px-4 border border-[var(--sl-border)] rounded-lg text-[var(--sl-text-primary)] hover:bg-[var(--sl-bg-hover)] transition-colors"
-          >
-            Yes
-          </button>
-          <button
-            type="button"
-            className="flex-1 py-3 px-4 border border-[var(--sl-border)] rounded-lg text-[var(--sl-text-primary)] hover:bg-[var(--sl-bg-hover)] transition-colors"
-          >
-            No
-          </button>
-        </div>
-      )}
-
-      {(questionType === 'single_choice' || questionType === 'multi_choice') && (
-        <div className="space-y-2">
-          {question.options && question.options.length > 0 ? (
-            question.options.map((option, idx) => (
-              <label
-                key={idx}
-                className="flex items-center gap-3 p-3 border border-[var(--sl-border)] rounded-lg cursor-pointer hover:bg-[var(--sl-bg-hover)] transition-colors"
-              >
-                <input
-                  type={questionType === 'single_choice' ? 'radio' : 'checkbox'}
-                  name={`preview-${question.id}`}
-                  disabled
-                  className={`h-4 w-4 text-blue-600 ${questionType === 'multi_choice' ? 'rounded' : ''}`}
-                />
-                <span className="text-[var(--sl-text-primary)]">{option.label || option.value}</span>
-              </label>
-            ))
-          ) : (
-            <p className="text-sm text-[var(--sl-text-muted)] italic">
-              No options configured for this question
-            </p>
-          )}
-        </div>
-      )}
-
-      {questionType === 'scale' && (
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-[var(--sl-text-muted)]">
-            <span>{question.validation?.min ?? 0}</span>
-            <span>{question.validation?.max ?? 10}</span>
-          </div>
-          <input
-            type="range"
-            min={question.validation?.min ?? 0}
-            max={question.validation?.max ?? 10}
-            disabled
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-          />
-          <div className="flex justify-center">
-            <span className="px-3 py-1 bg-[var(--sl-bg-hover)] rounded-lg text-[var(--sl-text-primary)] font-medium">
-              {Math.floor(((question.validation?.min ?? 0) + (question.validation?.max ?? 10)) / 2)}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {questionType === 'number' && (
-        <input
-          type="number"
-          placeholder="Enter a number"
-          disabled
-          className="w-full p-3 border border-[var(--sl-border)] rounded-lg bg-[var(--sl-bg-card)] text-[var(--sl-text-primary)] placeholder-[var(--sl-text-muted)]"
-        />
-      )}
-
-      {questionType === 'text' && (
-        <textarea
-          placeholder="Enter your response..."
-          disabled
-          rows={3}
-          className="w-full p-3 border border-[var(--sl-border)] rounded-lg bg-[var(--sl-bg-card)] text-[var(--sl-text-primary)] placeholder-[var(--sl-text-muted)] resize-none"
-        />
-      )}
-    </div>
-  );
-}
-
-function QuestionnaireDetailSkeleton() {
+function EditorSkeleton() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Skeleton className="h-10 w-10 rounded-lg" />
         <div>
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48 mt-2" />
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-8 w-64 mt-2" />
         </div>
       </div>
 
+      <Skeleton className="h-16 w-full rounded-lg" />
       <Skeleton className="h-16 w-full rounded-lg" />
 
       <div className="space-y-3">

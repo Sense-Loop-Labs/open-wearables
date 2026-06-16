@@ -32,6 +32,9 @@ from sense_loop.schemas.questionnaire import (
     QuestionnaireAssignRequest,
     PatientQuestionnaireResponse,
     PatientQuestionnaireListResponse,
+    CopyQuestionnaireRequest,
+    PatientQuestionnaireDetailResponse,
+    PatientQuestionnaireCopyListResponse,
 )
 
 router = APIRouter()
@@ -64,6 +67,9 @@ async def list_questionnaires(
         )
 
     stmt = select(Questionnaire).options(joinedload(Questionnaire.questions))
+
+    # Only show templates (patient_id is null), not patient-specific copies
+    stmt = stmt.where(Questionnaire.patient_id.is_(None))
 
     # Filter by organization
     if organization_id:
@@ -939,8 +945,392 @@ async def get_questionnaire_response(
 
 
 # =============================================================================
+# Patient Questionnaire Copies
+# =============================================================================
+
+
+@router.post(
+    "/patients/{patient_id}/copy",
+    response_model=PatientQuestionnaireDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def copy_questionnaire_for_patient(
+    patient_id: UUID,
+    request: CopyQuestionnaireRequest,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """Create a patient-specific copy of a questionnaire template.
+
+    This creates a full copy of the questionnaire that can be customized
+    for this specific patient without affecting the original template.
+    """
+    # Get patient
+    patient = db.execute(
+        select(Patient).where(Patient.id == patient_id)
+    ).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access to patient's organization
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_PATIENTS, patient.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to create questionnaires for this patient",
+        )
+
+    # Get template
+    template = db.execute(
+        select(Questionnaire)
+        .where(Questionnaire.id == request.template_id)
+        .options(joinedload(Questionnaire.questions))
+    ).unique().scalar_one_or_none()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Questionnaire template not found",
+        )
+
+    if not template.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot copy inactive questionnaire template",
+        )
+
+    # Ensure template is actually a template (patient_id is null)
+    if template.patient_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot copy a patient-specific questionnaire. Use a template instead.",
+        )
+
+    # Create copy using service
+    service = QuestionnaireService(db)
+    copy = service.copy_for_patient(request.template_id, patient_id)
+
+    # Create an assignment for the copied questionnaire
+    if copy.questionnaire_type in ("daily", "weekly"):
+        assignment = PatientQuestionnaireAssignment(
+            id=uuid4(),
+            patient_id=patient_id,
+            questionnaire_id=copy.id,
+            status="active",
+            effective_start=datetime.utcnow(),
+            assigned_by_id=practitioner.id,
+            last_generated_at=datetime.utcnow(),
+        )
+        db.add(assignment)
+
+    # Create a pending response so the questionnaire appears in the mobile app
+    service.create_response(
+        patient_id=patient_id,
+        questionnaire_id=copy.id,
+    )
+
+    # Audit log
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    audit = AuditLogger(db)
+    audit.log_create(
+        resource_type="patient_questionnaire",
+        resource_id=copy.id,
+        resource_name=f"{copy.title} for patient {patient.full_name}",
+    )
+
+    db.commit()
+
+    # Refresh to get questions
+    db.refresh(copy)
+
+    return _patient_questionnaire_to_detail_response(copy, template.title)
+
+
+@router.get(
+    "/patients/{patient_id}/copies",
+    response_model=PatientQuestionnaireCopyListResponse,
+)
+async def list_patient_questionnaire_copies(
+    patient_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """List all patient-specific questionnaire copies for a patient."""
+    # Get patient
+    patient = db.execute(
+        select(Patient).where(Patient.id == patient_id)
+    ).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_PATIENTS, patient.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view this patient's questionnaires",
+        )
+
+    # Get patient questionnaires using service
+    service = QuestionnaireService(db)
+    questionnaires = service.get_patient_questionnaires(patient_id)
+
+    # Build lookup for source template titles
+    template_ids = [q.source_template_id for q in questionnaires if q.source_template_id]
+    template_titles = {}
+    if template_ids:
+        templates = db.execute(
+            select(Questionnaire.id, Questionnaire.title)
+            .where(Questionnaire.id.in_(template_ids))
+        ).all()
+        template_titles = {t.id: t.title for t in templates}
+
+    # Get latest response for each questionnaire
+    questionnaire_ids = [q.id for q in questionnaires]
+    latest_responses: dict = {}
+    if questionnaire_ids:
+        # Get the most recent response for each questionnaire
+        from sqlalchemy import func
+        subquery = (
+            select(
+                QuestionnaireResponseModel.questionnaire_id,
+                func.max(QuestionnaireResponseModel.created_at).label("max_created_at"),
+            )
+            .where(
+                QuestionnaireResponseModel.patient_id == patient_id,
+                QuestionnaireResponseModel.questionnaire_id.in_(questionnaire_ids),
+            )
+            .group_by(QuestionnaireResponseModel.questionnaire_id)
+            .subquery()
+        )
+        responses = db.execute(
+            select(QuestionnaireResponseModel)
+            .join(
+                subquery,
+                (QuestionnaireResponseModel.questionnaire_id == subquery.c.questionnaire_id)
+                & (QuestionnaireResponseModel.created_at == subquery.c.max_created_at),
+            )
+        ).scalars().all()
+        latest_responses = {r.questionnaire_id: r for r in responses}
+
+    items = [
+        _patient_questionnaire_to_detail_response(
+            q,
+            template_titles.get(q.source_template_id) if q.source_template_id else None,
+            latest_responses.get(q.id),
+        )
+        for q in questionnaires
+    ]
+
+    return PatientQuestionnaireCopyListResponse(
+        items=items,
+        total=len(items),
+    )
+
+
+@router.post(
+    "/patients/{patient_id}/copies/{questionnaire_id}/generate-response",
+    response_model=PatientQuestionnaireResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_response_for_patient_questionnaire(
+    patient_id: UUID,
+    questionnaire_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """Generate a new pending response for a patient questionnaire copy.
+
+    Use this to send the questionnaire to the patient's mobile app.
+    """
+    # Get patient
+    patient = db.execute(
+        select(Patient).where(Patient.id == patient_id)
+    ).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_PATIENTS, patient.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to manage this patient's questionnaires",
+        )
+
+    # Get questionnaire - must be a patient-specific copy
+    questionnaire = db.execute(
+        select(Questionnaire)
+        .where(
+            Questionnaire.id == questionnaire_id,
+            Questionnaire.patient_id == patient_id,
+        )
+    ).scalar_one_or_none()
+
+    if not questionnaire:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient questionnaire not found",
+        )
+
+    if not questionnaire.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot generate response for inactive questionnaire",
+        )
+
+    # Check if there's already a pending response
+    existing_response = db.execute(
+        select(QuestionnaireResponseModel).where(
+            QuestionnaireResponseModel.patient_id == patient_id,
+            QuestionnaireResponseModel.questionnaire_id == questionnaire_id,
+            QuestionnaireResponseModel.status == "in_progress",
+        )
+    ).scalar_one_or_none()
+
+    if existing_response:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Patient already has a pending response for this questionnaire",
+        )
+
+    # Create response
+    service = QuestionnaireService(db)
+    response = service.create_response(
+        patient_id=patient_id,
+        questionnaire_id=questionnaire_id,
+    )
+    db.commit()
+
+    return PatientQuestionnaireResponse(
+        id=response.id,
+        patient_id=response.patient_id,
+        questionnaire_id=response.questionnaire_id,
+        questionnaire_title=questionnaire.title,
+        status=response.status,
+        created_at=response.created_at,
+        due_at=response.due_at,
+    )
+
+
+@router.get(
+    "/patients/{patient_id}/copies/{questionnaire_id}",
+    response_model=PatientQuestionnaireDetailResponse,
+)
+async def get_patient_questionnaire_copy(
+    patient_id: UUID,
+    questionnaire_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """Get a specific patient questionnaire copy with all questions."""
+    # Get patient
+    patient = db.execute(
+        select(Patient).where(Patient.id == patient_id)
+    ).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_PATIENTS, patient.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view this patient's questionnaires",
+        )
+
+    # Get questionnaire
+    questionnaire = db.execute(
+        select(Questionnaire)
+        .where(
+            Questionnaire.id == questionnaire_id,
+            Questionnaire.patient_id == patient_id,
+        )
+        .options(joinedload(Questionnaire.questions))
+    ).unique().scalar_one_or_none()
+
+    if not questionnaire:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient questionnaire not found",
+        )
+
+    # Get source template title
+    source_title = None
+    if questionnaire.source_template_id:
+        source = db.execute(
+            select(Questionnaire.title)
+            .where(Questionnaire.id == questionnaire.source_template_id)
+        ).scalar_one_or_none()
+        source_title = source
+
+    return _patient_questionnaire_to_detail_response(questionnaire, source_title)
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+def _patient_questionnaire_to_detail_response(
+    questionnaire: Questionnaire,
+    source_template_title: str | None,
+    latest_response: "QuestionnaireResponseModel | None" = None,
+) -> PatientQuestionnaireDetailResponse:
+    """Convert a patient questionnaire model to detail response schema."""
+    return PatientQuestionnaireDetailResponse(
+        id=questionnaire.id,
+        patient_id=questionnaire.patient_id,
+        source_template_id=questionnaire.source_template_id,
+        source_template_title=source_template_title,
+        organization_id=questionnaire.organization_id,
+        title=questionnaire.title,
+        code=questionnaire.code,
+        description=questionnaire.description,
+        questionnaire_type=questionnaire.questionnaire_type,
+        category=questionnaire.category,
+        estimated_minutes=questionnaire.estimated_minutes,
+        allow_skip=questionnaire.allow_skip,
+        require_completion=questionnaire.require_completion,
+        has_scoring=questionnaire.has_scoring,
+        scoring_config=questionnaire.scoring_config,
+        is_active=questionnaire.is_active,
+        version=questionnaire.version,
+        question_count=len(questionnaire.questions) if questionnaire.questions else 0,
+        questions=[_question_to_response(q) for q in sorted(questionnaire.questions, key=lambda x: x.order)] if questionnaire.questions else [],
+        created_at=questionnaire.created_at,
+        updated_at=None,
+        # Response status
+        latest_response_id=latest_response.id if latest_response else None,
+        latest_response_status=latest_response.status if latest_response else None,
+        latest_response_completed_at=latest_response.completed_at if latest_response else None,
+        has_pending_response=latest_response.status == "in_progress" if latest_response else False,
+    )
 
 
 def _questionnaire_to_response(questionnaire: Questionnaire) -> QuestionnaireResponse:

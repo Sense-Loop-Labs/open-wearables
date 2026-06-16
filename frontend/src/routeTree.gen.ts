@@ -44,6 +44,7 @@ import { Route as SlSlAuthenticatedCliniciansClinicianIdRouteImport } from './ro
 import { Route as SlSlAuthenticatedAlertsAlertIdRouteImport } from './routes/sl/_sl-authenticated/alerts/$alertId'
 import { Route as SlSlAuthenticatedPatientsPatientIdIndexRouteImport } from './routes/sl/_sl-authenticated/patients/$patientId/index'
 import { Route as SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRouteImport } from './routes/sl/_sl-authenticated/instruction-templates/questionnaires.$questionnaireId'
+import { Route as SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRouteImport } from './routes/sl/_sl-authenticated/patients/$patientId/questionnaires.$questionnaireId.edit'
 import { Route as SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRouteImport } from './routes/sl/_sl-authenticated/patients/$patientId/plans.$planId.edit'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -237,6 +238,14 @@ const SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute =
       getParentRoute: () => SlSlAuthenticatedRoute,
     } as any,
   )
+const SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute =
+  SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRouteImport.update(
+    {
+      id: '/questionnaires/$questionnaireId/edit',
+      path: '/questionnaires/$questionnaireId/edit',
+      getParentRoute: () => SlSlAuthenticatedPatientsPatientIdRoute,
+    } as any,
+  )
 const SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute =
   SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRouteImport.update({
     id: '/plans/$planId/edit',
@@ -280,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/sl/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
   '/sl/patients/$patientId/': typeof SlSlAuthenticatedPatientsPatientIdIndexRoute
   '/sl/patients/$patientId/plans/$planId/edit': typeof SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute
+  '/sl/patients/$patientId/questionnaires/$questionnaireId/edit': typeof SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -313,6 +323,7 @@ export interface FileRoutesByTo {
   '/sl/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
   '/sl/patients/$patientId': typeof SlSlAuthenticatedPatientsPatientIdIndexRoute
   '/sl/patients/$patientId/plans/$planId/edit': typeof SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute
+  '/sl/patients/$patientId/questionnaires/$questionnaireId/edit': typeof SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -352,6 +363,7 @@ export interface FileRoutesById {
   '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId': typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRoute
   '/sl/_sl-authenticated/patients/$patientId/': typeof SlSlAuthenticatedPatientsPatientIdIndexRoute
   '/sl/_sl-authenticated/patients/$patientId/plans/$planId/edit': typeof SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute
+  '/sl/_sl-authenticated/patients/$patientId/questionnaires/$questionnaireId/edit': typeof SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -391,6 +403,7 @@ export interface FileRouteTypes {
     | '/sl/instruction-templates/questionnaires/$questionnaireId'
     | '/sl/patients/$patientId/'
     | '/sl/patients/$patientId/plans/$planId/edit'
+    | '/sl/patients/$patientId/questionnaires/$questionnaireId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -424,6 +437,7 @@ export interface FileRouteTypes {
     | '/sl/instruction-templates/questionnaires/$questionnaireId'
     | '/sl/patients/$patientId'
     | '/sl/patients/$patientId/plans/$planId/edit'
+    | '/sl/patients/$patientId/questionnaires/$questionnaireId/edit'
   id:
     | '__root__'
     | '/'
@@ -462,6 +476,7 @@ export interface FileRouteTypes {
     | '/sl/_sl-authenticated/instruction-templates/questionnaires/$questionnaireId'
     | '/sl/_sl-authenticated/patients/$patientId/'
     | '/sl/_sl-authenticated/patients/$patientId/plans/$planId/edit'
+    | '/sl/_sl-authenticated/patients/$patientId/questionnaires/$questionnaireId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -727,6 +742,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SlSlAuthenticatedInstructionTemplatesQuestionnairesQuestionnaireIdRouteImport
       parentRoute: typeof SlSlAuthenticatedRoute
     }
+    '/sl/_sl-authenticated/patients/$patientId/questionnaires/$questionnaireId/edit': {
+      id: '/sl/_sl-authenticated/patients/$patientId/questionnaires/$questionnaireId/edit'
+      path: '/questionnaires/$questionnaireId/edit'
+      fullPath: '/sl/patients/$patientId/questionnaires/$questionnaireId/edit'
+      preLoaderRoute: typeof SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRouteImport
+      parentRoute: typeof SlSlAuthenticatedPatientsPatientIdRoute
+    }
     '/sl/_sl-authenticated/patients/$patientId/plans/$planId/edit': {
       id: '/sl/_sl-authenticated/patients/$patientId/plans/$planId/edit'
       path: '/plans/$planId/edit'
@@ -786,6 +808,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 interface SlSlAuthenticatedPatientsPatientIdRouteChildren {
   SlSlAuthenticatedPatientsPatientIdIndexRoute: typeof SlSlAuthenticatedPatientsPatientIdIndexRoute
   SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute: typeof SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute
+  SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute: typeof SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute
 }
 
 const SlSlAuthenticatedPatientsPatientIdRouteChildren: SlSlAuthenticatedPatientsPatientIdRouteChildren =
@@ -794,6 +817,8 @@ const SlSlAuthenticatedPatientsPatientIdRouteChildren: SlSlAuthenticatedPatients
       SlSlAuthenticatedPatientsPatientIdIndexRoute,
     SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute:
       SlSlAuthenticatedPatientsPatientIdPlansPlanIdEditRoute,
+    SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute:
+      SlSlAuthenticatedPatientsPatientIdQuestionnairesQuestionnaireIdEditRoute,
   }
 
 const SlSlAuthenticatedPatientsPatientIdRouteWithChildren =

@@ -68,6 +68,8 @@ import type {
   PatientQuestionnaire,
   PatientQuestionnaireList,
   QuestionnaireResponseDetail,
+  PatientQuestionnaireDetail,
+  PatientQuestionnaireCopyList,
 } from '../types/sense-loop';
 
 const SL_BASE = '/api/v1/sl';
@@ -840,6 +842,50 @@ export const slQuestionnairesService = {
       {
         method: 'GET',
       }
+    );
+  },
+
+  // Patient questionnaire copies
+  async copyQuestionnaireForPatient(
+    patientId: string,
+    templateId: string
+  ): Promise<PatientQuestionnaireDetail> {
+    return slApiClient.post<PatientQuestionnaireDetail>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/copy`,
+      { template_id: templateId }
+    );
+  },
+
+  async getPatientQuestionnaireCopies(
+    patientId: string
+  ): Promise<PatientQuestionnaireCopyList> {
+    return slApiClient.request<PatientQuestionnaireCopyList>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/copies`,
+      {
+        method: 'GET',
+      }
+    );
+  },
+
+  async getPatientQuestionnaireCopy(
+    patientId: string,
+    questionnaireId: string
+  ): Promise<PatientQuestionnaireDetail> {
+    return slApiClient.request<PatientQuestionnaireDetail>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/copies/${questionnaireId}`,
+      {
+        method: 'GET',
+      }
+    );
+  },
+
+  async generateResponseForPatientQuestionnaire(
+    patientId: string,
+    questionnaireId: string
+  ): Promise<{ id: string; status: string }> {
+    return slApiClient.post<{ id: string; status: string }>(
+      `${SL_BASE}/questionnaires/patients/${patientId}/copies/${questionnaireId}/generate-response`,
+      {}
     );
   },
 };

@@ -917,6 +917,8 @@ export interface ScoringConfig {
 export interface QuestionnaireTemplate {
   id: string;
   organization_id: string | null;
+  patient_id?: string | null;  // If set, this is a patient-specific copy
+  source_template_id?: string | null;  // The template this was copied from
   title: string;
   code: string;
   description: string | null;
@@ -1067,4 +1069,25 @@ export interface QuestionnaireResponseDetail {
   completed_at?: string;
   due_at?: string;
   answers: QuestionnaireAnswer[];
+}
+
+// Patient Questionnaire Copies
+export interface CopyQuestionnaireRequest {
+  template_id: string;
+}
+
+export interface PatientQuestionnaireDetail extends QuestionnaireTemplateDetail {
+  patient_id: string;
+  source_template_id: string | null;
+  source_template_title: string | null;
+  // Response status
+  latest_response_id: string | null;
+  latest_response_status: 'in_progress' | 'completed' | null;
+  latest_response_completed_at: string | null;
+  has_pending_response: boolean;
+}
+
+export interface PatientQuestionnaireCopyList {
+  items: PatientQuestionnaireDetail[];
+  total: number;
 }

@@ -13,6 +13,7 @@ import {
   Copy,
   Edit2,
   Loader2,
+  Send,
   Smartphone,
   User,
 } from 'lucide-react';
@@ -51,6 +52,9 @@ import {
   usePatientQuestionnaires,
   useAssignQuestionnaire,
   useQuestionnaireResponse,
+  usePatientQuestionnaireCopies,
+  useCopyQuestionnaireForPatient,
+  useSendQuestionnaireToPatient,
 } from '@/hooks/api/use-sl-questionnaires';
 import type {
   Alert,
@@ -1124,13 +1128,17 @@ function CarePlanSection({ patientId }: { patientId: string }) {
   const { data: plans, isLoading: plansLoading } = usePatientPlans(patientId);
   const { data: questionnaires, isLoading: questionnairesLoading } =
     usePatientQuestionnaires(patientId);
+  const { data: questionnaireCopies, isLoading: copiesLoading } =
+    usePatientQuestionnaireCopies(patientId);
+  const sendQuestionnaire = useSendQuestionnaireToPatient();
 
-  const isLoading = plansLoading || questionnairesLoading;
+  const isLoading = plansLoading || questionnairesLoading || copiesLoading;
 
   // Filter to show active instructions, all questionnaires
   const activeInstructions =
     plans?.items?.filter((p) => p.status === 'active') ?? [];
   const assignedQuestionnaires = questionnaires?.items ?? [];
+  const patientQuestionnaires = questionnaireCopies?.items ?? [];
 
   if (isLoading) {
     return (
@@ -1143,7 +1151,7 @@ function CarePlanSection({ patientId }: { patientId: string }) {
   }
 
   const hasNoAssignments =
-    activeInstructions.length === 0 && assignedQuestionnaires.length === 0;
+    activeInstructions.length === 0 && assignedQuestionnaires.length === 0 && patientQuestionnaires.length === 0;
 
   if (hasNoAssignments) {
     return (
@@ -1229,12 +1237,91 @@ function CarePlanSection({ patientId }: { patientId: string }) {
         </div>
       )}
 
-      {/* Assigned Questionnaires */}
+      {/* Patient Questionnaire Copies (editable) */}
+      {patientQuestionnaires.length > 0 && (
+        <div className="sl-card">
+          <div className="sl-card-body">
+            <h3 className="text-lg font-medium text-[var(--sl-text-primary)] mb-4">
+              Patient Questionnaires
+            </h3>
+            <div className="divide-y divide-[var(--sl-border)]">
+              {patientQuestionnaires.map((q) => (
+                <div key={q.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-[var(--sl-text-primary)]">
+                        {q.title}
+                      </p>
+                      <p className="text-sm text-[var(--sl-text-muted)]">
+                        {q.question_count} questions
+                        {q.source_template_title && (
+                          <> · Source: {q.source_template_title}</>
+                        )}
+                        {q.latest_response_status === 'completed' && q.latest_response_completed_at && (
+                          <> · Completed {new Date(q.latest_response_completed_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}</>
+                        )}
+                        {q.has_pending_response && (
+                          <> · Awaiting response</>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* Show status badge */}
+                      {q.latest_response_status === 'completed' && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <CheckCircle2 className="h-3 w-3 inline mr-1" />
+                          Completed
+                        </span>
+                      )}
+                      {q.has_pending_response && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          Pending
+                        </span>
+                      )}
+                      {/* Only show Send button if no pending response */}
+                      {!q.has_pending_response && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => sendQuestionnaire.mutate({ patientId, questionnaireId: q.id })}
+                          disabled={sendQuestionnaire.isPending}
+                          className="border-green-500 text-green-600 hover:bg-green-500 hover:text-white"
+                        >
+                          <Send className="h-3 w-3 mr-1" />
+                          {sendQuestionnaire.isPending ? 'Sending...' : 'Send to Patient'}
+                        </Button>
+                      )}
+                      <Link
+                        to="/sl/patients/$patientId/questionnaires/$questionnaireId/edit"
+                        params={{ patientId, questionnaireId: q.id }}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-[var(--sl-brand)] text-[var(--sl-brand)] hover:bg-[var(--sl-brand)] hover:text-white"
+                        >
+                          <Edit2 className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assigned Questionnaires (responses) */}
       {assignedQuestionnaires.length > 0 && (
         <div className="sl-card">
           <div className="sl-card-body">
             <h3 className="text-lg font-medium text-[var(--sl-text-primary)] mb-4">
-              Assigned Questionnaires
+              Questionnaire Responses
             </h3>
             <div className="divide-y divide-[var(--sl-border)]">
               {assignedQuestionnaires.map((q) => (
@@ -1408,6 +1495,7 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
   const assignPlan = useAssignPatientPlan();
   const cancelPlan = useCancelPatientPlan();
   const assignQuestionnaire = useAssignQuestionnaire();
+  const copyQuestionnaire = useCopyQuestionnaireForPatient();
   const { data: templatesData, isLoading: templatesLoading } =
     useInstructionTemplates({
       organization_id: organizationId || undefined,
@@ -1530,13 +1618,15 @@ function EditPatientDialog({ patient, open, onClose }: EditPatientDialogProps) {
         }
       }
 
-      // Handle questionnaire assignment (only assign new ones, don't remove existing)
+      // Handle questionnaire assignment - create a patient-specific copy
       const newQuestionnaireId = formData.questionnaire_id || '';
       if (newQuestionnaireId && newQuestionnaireId !== currentQuestionnaireId) {
-        await assignQuestionnaire.mutateAsync({
+        // Create a patient-specific copy of the template
+        await copyQuestionnaire.mutateAsync({
           patientId: patient.id,
-          questionnaireId: newQuestionnaireId,
+          templateId: newQuestionnaireId,
         });
+        toast.success('Questionnaire copied for patient - you can now customize it');
       }
 
       onClose();
