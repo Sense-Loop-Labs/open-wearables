@@ -340,6 +340,60 @@ def process_data_for_tasks(
 
 
 @shared_task(
+    name="sense_loop.generate_recurring_questionnaires",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=3,
+    soft_time_limit=300,
+    time_limit=360,
+)
+def generate_recurring_questionnaires(self) -> dict:
+    """Generate questionnaire responses for recurring assignments.
+
+    For daily questionnaires, creates a new response if the patient
+    doesn't have a pending one for today.
+    For weekly questionnaires, creates a new response weekly.
+
+    Should be run daily (e.g., at 2:30 AM UTC).
+
+    Returns:
+        Summary of responses generated
+    """
+    if not settings.sense_loop_enabled:
+        return {"skipped": True, "reason": "sense_loop_disabled"}
+
+    db = SessionLocal()
+    try:
+        from sense_loop.services import QuestionnaireService
+
+        service = QuestionnaireService(db)
+        total_created = service.generate_recurring_questionnaires()
+        db.commit()
+
+        logger.info(
+            "Recurring questionnaire generation complete: %d responses created",
+            total_created,
+        )
+
+        return {
+            "success": True,
+            "responses_created": total_created,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to generate recurring questionnaires: %s", str(e), exc_info=True
+        )
+        raise
+    finally:
+        db.close()
+
+
+@shared_task(
     name="sense_loop.process_questionnaire_for_tasks",
     bind=True,
     autoretry_for=(Exception,),

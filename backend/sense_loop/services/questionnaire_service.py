@@ -352,3 +352,109 @@ class QuestionnaireService:
             patient.id,
             question.code,
         )
+
+    def generate_recurring_questionnaires(self) -> int:
+        """Generate questionnaire responses for recurring assignments.
+
+        Checks all active questionnaire assignments where the questionnaire
+        type is 'daily' or 'weekly' and creates new responses if needed.
+
+        Returns:
+            Number of responses created
+        """
+        from datetime import timedelta
+        from sense_loop.models import PatientQuestionnaireAssignment, Patient
+
+        now = datetime.utcnow()
+        today = now.date()
+        responses_created = 0
+
+        # Find active assignments for daily/weekly questionnaires
+        stmt = (
+            select(PatientQuestionnaireAssignment)
+            .join(Questionnaire)
+            .join(Patient)
+            .where(
+                PatientQuestionnaireAssignment.status == "active",
+                PatientQuestionnaireAssignment.effective_start <= now,
+                Patient.is_active == True,  # noqa: E712
+                Questionnaire.questionnaire_type.in_(["daily", "weekly"]),
+            )
+            .options(
+                joinedload(PatientQuestionnaireAssignment.questionnaire),
+                joinedload(PatientQuestionnaireAssignment.patient),
+            )
+        )
+
+        # Filter out assignments past their end date
+        assignments = [
+            a for a in self.db.execute(stmt).unique().scalars().all()
+            if a.effective_end is None or a.effective_end >= now
+        ]
+
+        for assignment in assignments:
+            questionnaire = assignment.questionnaire
+            should_generate = False
+
+            if questionnaire.questionnaire_type == "daily":
+                # Generate if we haven't generated today
+                if assignment.last_generated_at is None:
+                    should_generate = True
+                elif assignment.last_generated_at.date() < today:
+                    should_generate = True
+
+            elif questionnaire.questionnaire_type == "weekly":
+                # Generate if we haven't generated this week
+                if assignment.last_generated_at is None:
+                    should_generate = True
+                else:
+                    days_since = (today - assignment.last_generated_at.date()).days
+                    if days_since >= 7:
+                        should_generate = True
+
+            if should_generate:
+                # Check if there's already a pending response for this questionnaire
+                existing = self._get_pending_response_for_assignment(assignment)
+                if existing:
+                    logger.debug(
+                        "Skipping generation for assignment %s - pending response exists",
+                        assignment.id,
+                    )
+                    continue
+
+                # Create new response
+                response = self.create_response(
+                    patient_id=assignment.patient_id,
+                    questionnaire_id=assignment.questionnaire_id,
+                )
+
+                # Update last_generated_at
+                assignment.last_generated_at = now
+
+                responses_created += 1
+                logger.info(
+                    "Generated %s questionnaire response %s for patient %s",
+                    questionnaire.questionnaire_type,
+                    response.id,
+                    assignment.patient_id,
+                )
+
+        return responses_created
+
+    def _get_pending_response_for_assignment(
+        self,
+        assignment: "PatientQuestionnaireAssignment",
+    ) -> QuestionnaireResponse | None:
+        """Check if there's already a pending response for this assignment."""
+        from sense_loop.models import PatientQuestionnaireAssignment
+
+        stmt = (
+            select(QuestionnaireResponse)
+            .where(
+                QuestionnaireResponse.patient_id == assignment.patient_id,
+                QuestionnaireResponse.questionnaire_id == assignment.questionnaire_id,
+                QuestionnaireResponse.status == "in_progress",
+            )
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()

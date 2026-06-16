@@ -66,6 +66,9 @@ class Questionnaire(BaseDbModel):
     responses: Mapped[list["QuestionnaireResponse"]] = relationship(
         back_populates="questionnaire",
     )
+    assignments: Mapped[list["PatientQuestionnaireAssignment"]] = relationship(
+        back_populates="questionnaire",
+    )
 
 
 class QuestionnaireQuestion(BaseDbModel):

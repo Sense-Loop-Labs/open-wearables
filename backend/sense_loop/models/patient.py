@@ -128,6 +128,11 @@ class Patient(BaseDbModel):
         cascade="all, delete-orphan",
         order_by="PatientInstructionTask.scheduled_at",
     )
+    questionnaire_assignments: Mapped[list["PatientQuestionnaireAssignment"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        order_by="desc(PatientQuestionnaireAssignment.created_at)",
+    )
 
     @property
     def full_name(self) -> str:

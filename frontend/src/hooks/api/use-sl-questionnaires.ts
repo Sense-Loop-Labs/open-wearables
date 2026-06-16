@@ -269,3 +269,11 @@ export function useAssignQuestionnaire() {
     },
   });
 }
+
+export function useQuestionnaireResponse(responseId: string | undefined) {
+  return useQuery({
+    queryKey: ['sl', 'questionnaireResponse', responseId],
+    queryFn: () => slQuestionnairesService.getResponseDetail(responseId!),
+    enabled: !!responseId,
+  });
+}

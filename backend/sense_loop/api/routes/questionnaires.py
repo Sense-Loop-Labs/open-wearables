@@ -1,5 +1,6 @@
 """Questionnaire template API routes for clinicians."""
 
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -9,7 +10,13 @@ from sqlalchemy.orm import joinedload
 from app.database import DbSession
 from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
 from sense_loop.audit import AuditLogger, get_audit_context
-from sense_loop.models import Questionnaire, QuestionnaireQuestion, Patient, QuestionnaireResponse as QuestionnaireResponseModel
+from sense_loop.models import (
+    Questionnaire,
+    QuestionnaireQuestion,
+    Patient,
+    QuestionnaireResponse as QuestionnaireResponseModel,
+    PatientQuestionnaireAssignment,
+)
 from sense_loop.services.questionnaire_service import QuestionnaireService
 from sense_loop.schemas.questionnaire import (
     QuestionCreate,
@@ -17,6 +24,7 @@ from sense_loop.schemas.questionnaire import (
     QuestionnaireDetailResponse,
     QuestionnaireListResponse,
     QuestionnaireResponse,
+    QuestionnaireResponseDetail,
     QuestionnaireUpdate,
     QuestionReorderRequest,
     QuestionResponse,
@@ -717,6 +725,29 @@ async def assign_questionnaire_to_patient(
             detail="Cannot assign inactive questionnaire",
         )
 
+    # For recurring questionnaires (daily/weekly), create an assignment record
+    if questionnaire.questionnaire_type in ("daily", "weekly"):
+        # Check if there's already an active assignment
+        existing_assignment = db.execute(
+            select(PatientQuestionnaireAssignment).where(
+                PatientQuestionnaireAssignment.patient_id == patient_id,
+                PatientQuestionnaireAssignment.questionnaire_id == request.questionnaire_id,
+                PatientQuestionnaireAssignment.status == "active",
+            )
+        ).scalar_one_or_none()
+
+        if not existing_assignment:
+            assignment = PatientQuestionnaireAssignment(
+                id=uuid4(),
+                patient_id=patient_id,
+                questionnaire_id=request.questionnaire_id,
+                status="active",
+                effective_start=datetime.utcnow(),
+                assigned_by_id=practitioner.id,
+                last_generated_at=datetime.utcnow(),  # Mark as generated since we create initial response
+            )
+            db.add(assignment)
+
     # Create response using service
     service = QuestionnaireService(db)
     response = service.create_response(
@@ -792,6 +823,118 @@ async def list_patient_questionnaires(
     return PatientQuestionnaireListResponse(
         items=items,
         total=len(items),
+    )
+
+
+@router.get(
+    "/responses/{response_id}",
+    response_model=QuestionnaireResponseDetail,
+)
+async def get_questionnaire_response(
+    response_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """Get detailed questionnaire response with answers."""
+    from sense_loop.schemas.questionnaire import QuestionnaireAnswerResponse
+
+    service = QuestionnaireService(db)
+    response = service.get_response_by_id(response_id)
+
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Questionnaire response not found",
+        )
+
+    # Get patient to check access
+    patient = db.execute(
+        select(Patient).where(Patient.id == response.patient_id)
+    ).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.has_permission(
+        practitioner, Permission.MANAGE_PATIENTS, patient.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view this response",
+        )
+
+    # Build question lookup for answers
+    question_lookup = {}
+    if response.questionnaire and response.questionnaire.questions:
+        for q in response.questionnaire.questions:
+            question_lookup[q.id] = q
+
+    # Build answer responses - include all questions, not just answered ones
+    answers = []
+    answered_question_ids = {a.question_id for a in response.answers}
+    answer_by_question = {a.question_id: a for a in response.answers}
+
+    # Get all questions from the questionnaire, sorted by order
+    all_questions = sorted(
+        response.questionnaire.questions if response.questionnaire else [],
+        key=lambda q: q.order
+    )
+
+    for question in all_questions:
+        answer = answer_by_question.get(question.id)
+
+        # Convert options to schema format
+        question_options = None
+        if question.options:
+            from sense_loop.schemas.questionnaire import QuestionOptionSchema
+            question_options = [
+                QuestionOptionSchema(
+                    value=opt.get("value", ""),
+                    label=opt.get("label", ""),
+                    score=opt.get("score"),
+                )
+                for opt in question.options
+            ]
+
+        answers.append(
+            QuestionnaireAnswerResponse(
+                id=answer.id if answer else question.id,  # Use question ID if no answer
+                question_id=question.id,
+                question_code=question.code,
+                question_text=question.text,
+                question_type=question.question_type,
+                question_help_text=question.help_text,
+                question_options=question_options,
+                question_is_required=question.is_required,
+                question_order=question.order,
+                value_text=answer.value_text if answer else None,
+                value_number=answer.value_number if answer else None,
+                value_boolean=answer.value_boolean if answer else None,
+                value_json=answer.value_json if answer else None,
+                skipped=answer.skipped if answer else False,
+                score=answer.score if answer else None,
+                created_at=answer.created_at if answer else response.created_at,
+            )
+        )
+
+    return QuestionnaireResponseDetail(
+        id=response.id,
+        patient_id=response.patient_id,
+        questionnaire_id=response.questionnaire_id,
+        questionnaire_title=response.questionnaire.title if response.questionnaire else "Unknown",
+        questionnaire_description=response.questionnaire.description if response.questionnaire else None,
+        status=response.status,
+        total_score=response.total_score,
+        score_interpretation=response.score_interpretation,
+        created_at=response.created_at,
+        completed_at=response.completed_at,
+        due_at=response.due_at,
+        answers=answers,
     )
 
 

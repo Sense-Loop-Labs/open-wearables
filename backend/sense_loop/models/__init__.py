@@ -16,6 +16,7 @@ from .patient_summary import PatientSummary
 from .care_plan import CarePlan
 from .questionnaire import Questionnaire, QuestionnaireQuestion
 from .questionnaire_response import QuestionnaireResponse, QuestionnaireAnswer
+from .patient_questionnaire_assignment import PatientQuestionnaireAssignment
 from .audit_log import AuditLog
 from .value_set import ValueSet, ValueSetItem
 from .clinical_action import ClinicalAction
@@ -54,6 +55,7 @@ __all__ = [
     "QuestionnaireQuestion",
     "QuestionnaireResponse",
     "QuestionnaireAnswer",
+    "PatientQuestionnaireAssignment",
     "AuditLog",
     "ValueSet",
     "ValueSetItem",

@@ -1,11 +1,9 @@
 """Mobile app schemas - iOS response formats."""
 
-from datetime import datetime, date as date_type
-from typing import Any
+from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # =============================================================================
 # Request Schemas
@@ -200,6 +198,8 @@ class QuestionItem(BaseModel):
     is_required: bool = True
     options: list[dict] | None = None
     validation: dict | None = None
+    condition: dict | None = None  # Conditional display logic
+    order: int = 0  # Question ordering
 
 
 class PendingQuestionnaire(BaseModel):

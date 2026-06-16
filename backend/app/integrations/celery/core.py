@@ -156,6 +156,13 @@ def create_celery() -> Celery:
             "args": (),
             "kwargs": {},
         },
+        # generate-recurring-questionnaires: Creates responses for daily/weekly questionnaires
+        "sl-generate-recurring-questionnaires": {
+            "task": "sense_loop.generate_recurring_questionnaires",
+            "schedule": crontab(hour=2, minute=30),  # Daily at 02:30 UTC
+            "args": (),
+            "kwargs": {},
+        },
         # process-task-notifications: Sends reminders, overdue alerts, confirmations
         "sl-process-task-notifications": {
             "task": "sense_loop.process_task_notifications",

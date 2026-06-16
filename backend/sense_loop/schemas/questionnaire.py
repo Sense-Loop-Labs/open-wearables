@@ -251,3 +251,52 @@ class PatientQuestionnaireListResponse(BaseModel):
 
     items: list[PatientQuestionnaireResponse]
     total: int
+
+
+# =============================================================================
+# Response Detail Schemas (with answers)
+# =============================================================================
+
+
+class QuestionnaireAnswerResponse(BaseModel):
+    """A single answer to a questionnaire question."""
+
+    id: UUID
+    question_id: UUID
+    question_code: str
+    question_text: str
+    question_type: str
+    question_help_text: str | None = None
+    question_options: list[QuestionOptionSchema] | None = None
+    question_is_required: bool = False
+    question_order: int = 0
+    value_text: str | None = None
+    value_number: float | None = None
+    value_boolean: bool | None = None
+    value_json: dict | None = None
+    skipped: bool = False
+    score: float | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class QuestionnaireResponseDetail(BaseModel):
+    """Detailed questionnaire response with answers."""
+
+    id: UUID
+    patient_id: UUID
+    questionnaire_id: UUID
+    questionnaire_title: str
+    questionnaire_description: str | None = None
+    status: str
+    total_score: float | None = None
+    score_interpretation: str | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+    due_at: datetime | None = None
+    answers: list[QuestionnaireAnswerResponse]
+
+    class Config:
+        from_attributes = True
