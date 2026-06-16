@@ -28,6 +28,8 @@ class QuestionAlertConfig(BaseModel):
     alert_message: str | None = None
     # Per-value severity overrides: {"Poor": "warning", "Very Poor": "critical"}
     severity_by_value: dict[str, str] | None = None
+    # Flag any answer (for optional text/number fields)
+    alert_on_any_value: bool = False
 
 
 class QuestionValidation(BaseModel):

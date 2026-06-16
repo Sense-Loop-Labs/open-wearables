@@ -38,7 +38,10 @@ class PatientService:
         stmt = (
             select(Patient)
             .where(Patient.ow_user_id == ow_user_id)
-            .options(joinedload(Patient.organization))
+            .options(
+                joinedload(Patient.organization),
+                joinedload(Patient.summary),
+            )
         )
         return self.db.execute(stmt).unique().scalar_one_or_none()
 

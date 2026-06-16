@@ -349,7 +349,7 @@ function TemplateList({ templates }: { templates: InstructionTemplate[] }) {
                 <Link
                   to="/sl/instruction-templates/$templateId"
                   params={{ templateId: template.id }}
-                  className="text-lg font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-primary)] transition-colors"
+                  className="text-lg font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-brand)] transition-colors"
                 >
                   {template.title}
                 </Link>
@@ -1443,7 +1443,7 @@ function QuestionnaireList({ questionnaires }: { questionnaires: QuestionnaireTe
                 <Link
                   to="/sl/instruction-templates/questionnaires/$questionnaireId"
                   params={{ questionnaireId: questionnaire.id }}
-                  className="text-lg font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-primary)] transition-colors"
+                  className="text-lg font-medium text-[var(--sl-text-primary)] hover:text-[var(--sl-brand)] transition-colors"
                 >
                   {questionnaire.title}
                 </Link>

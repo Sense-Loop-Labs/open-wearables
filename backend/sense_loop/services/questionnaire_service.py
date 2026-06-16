@@ -185,6 +185,16 @@ class QuestionnaireService:
 
         self.db.flush()
 
+        # Reload response with answers and questions for alert checking
+        self.db.refresh(response)
+        response = self.db.execute(
+            select(QuestionnaireResponse)
+            .where(QuestionnaireResponse.id == response.id)
+            .options(
+                joinedload(QuestionnaireResponse.answers).joinedload(QuestionnaireAnswer.question)
+            )
+        ).unique().scalar_one()
+
         # Check for alert triggers
         self._check_alert_triggers(response)
 
@@ -278,36 +288,8 @@ class QuestionnaireService:
         return None
 
     def _check_alert_triggers(self, response: QuestionnaireResponse) -> None:
-        """Check if any answers should trigger alerts."""
-        from sense_loop.services.alert_engine import AlertEngine
-
-        for answer in response.answers:
-            if answer.skipped:
-                continue
-
-            question = answer.question
-            if not question.alert_config:
-                continue
-
-            trigger_values = question.alert_config.get("trigger_values", [])
-            answer_value = (
-                answer.value_text
-                or str(answer.value_number)
-                or str(answer.value_boolean)
-            )
-
-            if answer_value in trigger_values:
-                # This answer triggers an alert
-                self._create_questionnaire_alert(response, question, answer)
-
-    def _create_questionnaire_alert(
-        self,
-        response: QuestionnaireResponse,
-        question: QuestionnaireQuestion,
-        answer: QuestionnaireAnswer,
-    ) -> None:
-        """Create an alert from a questionnaire answer."""
-        from sense_loop.models import Alert, Patient
+        """Check answers for concerns and update alerts + patient summary."""
+        from sense_loop.models import Alert, Patient, PatientSummary
 
         # Get patient
         stmt = select(Patient).where(Patient.id == response.patient_id)
@@ -315,42 +297,210 @@ class QuestionnaireService:
         if not patient:
             return
 
-        alert_config = question.alert_config
-        severity = alert_config.get("alert_severity", "warning")
-        message = alert_config.get(
-            "alert_message",
-            f"Patient response requires attention: {question.text}",
-        )
+        # Resolve all previous questionnaire alerts for this patient
+        self._resolve_previous_questionnaire_alerts(response.patient_id)
 
-        alert = Alert(
-            id=uuid4(),
-            patient_id=patient.id,
-            organization_id=patient.organization_id,
-            title=f"Questionnaire Alert: {question.code}",
-            message=message,
-            severity=severity,
-            category="questionnaire",
-            status="active",
-            triggered_at=datetime.utcnow(),
-            data={
-                "questionnaire_id": str(response.questionnaire_id),
-                "response_id": str(response.id),
-                "question_id": str(question.id),
-                "question_code": question.code,
-                "answer_value": answer.value_text
-                or answer.value_number
-                or answer.value_boolean,
-            },
-        )
+        # Collect all concerns from this response
+        concerns: list[dict] = []
 
-        self.db.add(alert)
+        for answer in response.answers:
+            if answer.skipped:
+                continue
+
+            question = answer.question
+            if not question or not question.alert_config:
+                continue
+
+            trigger_values = question.alert_config.get("trigger_values", [])
+            severity_by_value = question.alert_config.get("severity_by_value", {})
+            default_severity = question.alert_config.get("alert_severity", "warning")
+            alert_on_any_value = question.alert_config.get("alert_on_any_value", False)
+
+            # Collect all answer values to check
+            values_to_check = []
+
+            # Check value_json for multi-choice answers
+            if answer.value_json:
+                selected = answer.value_json.get("selected", [])
+                if isinstance(selected, list):
+                    values_to_check.extend(selected)
+                else:
+                    values_to_check.append(selected)
+
+            # Check other value fields
+            if answer.value_text:
+                values_to_check.append(answer.value_text)
+            if answer.value_number is not None:
+                values_to_check.append(answer.value_number)
+                values_to_check.append(str(answer.value_number))
+            if answer.value_boolean is not None:
+                values_to_check.append(answer.value_boolean)
+                values_to_check.append(str(answer.value_boolean))  # 'True' or 'False'
+                values_to_check.append(str(answer.value_boolean).lower())  # 'true' or 'false'
+
+            # Handle "alert on any value" - flag if user provided any answer
+            if alert_on_any_value and values_to_check:
+                # Get the display value
+                if answer.value_number is not None:
+                    display_text = str(answer.value_number)
+                elif answer.value_text:
+                    display_text = answer.value_text
+                elif answer.value_boolean is not None:
+                    display_text = "Yes" if answer.value_boolean else "No"
+                else:
+                    display_text = str(values_to_check[0])
+
+                severity = default_severity
+                if severity != "info":
+                    concerns.append({
+                        "question_text": question.text,
+                        "question_code": question.code,
+                        "answer_text": display_text,
+                        "severity": severity,
+                        "question_id": str(question.id),
+                        "answer_id": str(answer.id),
+                    })
+                continue  # Skip trigger_values check for this answer
+
+            # Check if any answer value matches a trigger
+            for val in values_to_check:
+                if val in trigger_values:
+                    # Determine severity for this value
+                    if str(val) in severity_by_value:
+                        severity = severity_by_value[str(val)]
+                    else:
+                        severity = default_severity
+
+                    # Skip "info" level - these are informational, not concerns
+                    if severity == "info":
+                        continue
+
+                    # Format answer text for display
+                    if val is True or val == "true":
+                        display_text = "Yes"
+                    elif val is False or val == "false":
+                        display_text = "No"
+                    else:
+                        display_text = str(val)
+
+                    concerns.append({
+                        "question_text": question.text,
+                        "question_code": question.code,
+                        "answer_text": display_text,
+                        "severity": severity,
+                        "question_id": str(question.id),
+                        "answer_id": str(answer.id),
+                    })
+                    break  # Only one concern per answer
+
+        # Create alerts for each concern
+        now = datetime.utcnow()
+        for concern in concerns:
+            alert = Alert(
+                id=uuid4(),
+                patient_id=patient.id,
+                organization_id=patient.organization_id,
+                title=f"Symptom Concern: {concern['question_code']}",
+                message=f"{concern['question_text']}: {concern['answer_text']}",
+                severity=concern["severity"],
+                category="questionnaire",
+                status="active",
+                triggered_at=now,
+                data={
+                    "questionnaire_id": str(response.questionnaire_id),
+                    "response_id": str(response.id),
+                    "question_id": concern["question_id"],
+                    "question_code": concern["question_code"],
+                    "question_text": concern["question_text"],
+                    "answer_text": concern["answer_text"],
+                },
+            )
+            self.db.add(alert)
+            logger.info(
+                "Created questionnaire alert for patient %s: %s - %s (%s)",
+                patient.id,
+                concern["question_text"],
+                concern["answer_text"],
+                concern["severity"],
+            )
+
+        # Update patient summary
+        self._update_patient_summary_concerns(patient.id, concerns, now)
+
         self.db.flush()
 
+    def _resolve_previous_questionnaire_alerts(self, patient_id: UUID) -> None:
+        """Resolve all previous active questionnaire alerts for a patient."""
+        from sense_loop.models import Alert
+
+        stmt = (
+            select(Alert)
+            .where(
+                Alert.patient_id == patient_id,
+                Alert.category == "questionnaire",
+                Alert.status == "active",
+            )
+        )
+        previous_alerts = self.db.execute(stmt).scalars().all()
+
+        now = datetime.utcnow()
+        for alert in previous_alerts:
+            alert.status = "auto_resolved"
+            alert.resolved_at = now
+            alert.resolution_type = "new_questionnaire_response"
+
+        if previous_alerts:
+            logger.info(
+                "Auto-resolved %d previous questionnaire alerts for patient %s",
+                len(previous_alerts),
+                patient_id,
+            )
+
+    def _update_patient_summary_concerns(
+        self,
+        patient_id: UUID,
+        concerns: list[dict],
+        response_time: datetime,
+    ) -> None:
+        """Update patient summary with questionnaire concerns."""
+        from sense_loop.models import PatientSummary
+
+        stmt = select(PatientSummary).where(PatientSummary.patient_id == patient_id)
+        summary = self.db.execute(stmt).scalar_one_or_none()
+
+        if not summary:
+            logger.warning("No patient summary found for patient %s", patient_id)
+            return
+
+        # Determine highest severity
+        highest_severity = None
+        if concerns:
+            severities = [c["severity"] for c in concerns]
+            if "critical" in severities:
+                highest_severity = "critical"
+            elif "warning" in severities:
+                highest_severity = "warning"
+
+        # Update summary fields
+        summary.has_questionnaire_concerns = len(concerns) > 0
+        summary.questionnaire_concern_count = len(concerns)
+        summary.highest_questionnaire_severity = highest_severity
+        summary.questionnaire_concerns = [
+            {
+                "question_text": c["question_text"],
+                "answer_text": c["answer_text"],
+                "severity": c["severity"],
+                "question_code": c["question_code"],
+            }
+            for c in concerns
+        ] if concerns else None
+        summary.last_questionnaire_response_at = response_time
+
         logger.info(
-            "Created questionnaire alert %s for patient %s from question %s",
-            alert.id,
-            patient.id,
-            question.code,
+            "Updated patient %s summary: %d concerns, highest severity: %s",
+            patient_id,
+            len(concerns),
+            highest_severity,
         )
 
     def generate_recurring_questionnaires(self) -> int:

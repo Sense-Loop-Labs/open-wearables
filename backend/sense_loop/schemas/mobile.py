@@ -222,6 +222,7 @@ class CarePlanResponse(BaseModel):
     follow_up_appointments: list[dict] = []
     emergency_contacts: list[dict] = []
     pending_questionnaires: list[PendingQuestionnaire] = []
+    last_questionnaire_completed_at: datetime | None = None
 
 
 # =============================================================================

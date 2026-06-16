@@ -81,6 +81,15 @@ class PatientSummary(BaseDbModel):
     pending_questionnaires_count: Mapped[int] = mapped_column(default=0)
     last_questionnaire_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
+    # Questionnaire concerns (from latest response)
+    has_questionnaire_concerns: Mapped[bool] = mapped_column(default=False)
+    questionnaire_concern_count: Mapped[int] = mapped_column(default=0)
+    highest_questionnaire_severity: Mapped[str | None] = mapped_column(nullable=True)
+    # Severities: None, 'warning', 'critical'
+    questionnaire_concerns: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # List of {question_text, answer_text, severity, question_code}
+    last_questionnaire_response_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
     # Data freshness
     last_data_received_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(nullable=True)

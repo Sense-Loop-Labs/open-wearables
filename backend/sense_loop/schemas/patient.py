@@ -81,6 +81,13 @@ class PatientSummaryResponse(BaseModel):
     overall_status: str | None = None
     last_data_received_at: datetime | None = None
 
+    # Questionnaire concerns
+    has_questionnaire_concerns: bool = False
+    questionnaire_concern_count: int = 0
+    highest_questionnaire_severity: str | None = None
+    questionnaire_concerns: list[dict] | None = None
+    last_questionnaire_response_at: datetime | None = None
+
 
 class PatientResponse(BaseModel):
     """Schema for patient response."""

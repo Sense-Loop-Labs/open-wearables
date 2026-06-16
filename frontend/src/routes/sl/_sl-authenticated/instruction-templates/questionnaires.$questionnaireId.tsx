@@ -326,7 +326,7 @@ function SortableQuestionCard({
   };
 
   const deleteMutation = useDeleteQuestion();
-  const hasAlertConfig = question.alert_config && question.alert_config.trigger_values?.length > 0;
+  const hasAlertConfig = question.alert_config && (question.alert_config.trigger_values?.length > 0 || question.alert_config.alert_on_any_value);
 
   return (
     <div
@@ -463,7 +463,7 @@ function QuestionFormDialog({
     question?.options || [{ value: '', label: '', score: undefined }]
   );
   const [alertConfig, setAlertConfig] = useState<QuestionAlertConfig>(
-    question?.alert_config || { trigger_values: [], alert_severity: 'warning', alert_message: '' }
+    question?.alert_config || { trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false }
   );
   // Per-option severity tracking
   const [optionSeverities, setOptionSeverities] = useState<Record<string, 'info' | 'warning' | 'critical'>>(
@@ -477,19 +477,34 @@ function QuestionFormDialog({
   const showOptions = ['single_choice', 'multi_choice'].includes(questionType);
   const showScale = questionType === 'scale';
 
-  // Reset form when dialog opens for a new question (not editing)
+  // Sync form state when dialog opens
   useEffect(() => {
-    if (open && !question) {
-      setCode('');
-      setText('');
-      setHelpText('');
-      setQuestionType('single_choice');
-      setIsRequired(true);
-      setOptions([{ value: '', label: '', score: undefined }]);
-      setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '' });
-      setOptionSeverities({});
-      setScaleMin('0');
-      setScaleMax('10');
+    if (open) {
+      if (question) {
+        // Editing existing question - populate form with question data
+        setCode(question.code || '');
+        setText(question.text || '');
+        setHelpText(question.help_text || '');
+        setQuestionType(question.question_type || 'single_choice');
+        setIsRequired(question.is_required ?? true);
+        setOptions(question.options || [{ value: '', label: '', score: undefined }]);
+        setAlertConfig(question.alert_config || { trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false });
+        setOptionSeverities(question.alert_config?.severity_by_value || {});
+        setScaleMin(question.validation?.min?.toString() || '0');
+        setScaleMax(question.validation?.max?.toString() || '10');
+      } else {
+        // New question - reset form
+        setCode('');
+        setText('');
+        setHelpText('');
+        setQuestionType('single_choice');
+        setIsRequired(true);
+        setOptions([{ value: '', label: '', score: undefined }]);
+        setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false });
+        setOptionSeverities({});
+        setScaleMin('0');
+        setScaleMax('10');
+      }
     }
   }, [open, question]);
 
@@ -500,7 +515,7 @@ function QuestionFormDialog({
     setQuestionType('single_choice');
     setIsRequired(true);
     setOptions([{ value: '', label: '', score: undefined }]);
-    setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '' });
+    setAlertConfig({ trigger_values: [], alert_severity: 'warning', alert_message: '', alert_on_any_value: false });
     setOptionSeverities({});
     setScaleMin('0');
     setScaleMax('10');
@@ -530,12 +545,13 @@ function QuestionFormDialog({
       validation: showScale
         ? { min: parseFloat(scaleMin), max: parseFloat(scaleMax) }
         : undefined,
-      alert_config: alertConfig.trigger_values.length > 0
+      alert_config: (alertConfig.trigger_values?.length > 0 || alertConfig.alert_on_any_value)
         ? {
-            trigger_values: alertConfig.trigger_values,
+            trigger_values: alertConfig.trigger_values?.length > 0 ? alertConfig.trigger_values : undefined,
             alert_severity: alertConfig.alert_severity as 'info' | 'warning' | 'critical',
             alert_message: alertConfig.alert_message || undefined,
             severity_by_value: Object.keys(optionSeverities).length > 0 ? optionSeverities : undefined,
+            alert_on_any_value: alertConfig.alert_on_any_value || undefined,
           }
         : undefined,
     };
@@ -800,6 +816,45 @@ function QuestionFormDialog({
                   />
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Text/Number Alert Configuration */}
+          {(questionType === 'text' || questionType === 'number') && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-[var(--sl-text-primary)] mb-3">
+                <AlertTriangle className="h-4 w-4 inline mr-1 text-orange-500" />
+                Alert Configuration
+              </h4>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="alert-on-any-value"
+                  checked={alertConfig.alert_on_any_value || false}
+                  onChange={(e) => setAlertConfig({ ...alertConfig, alert_on_any_value: e.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label htmlFor="alert-on-any-value" className="text-sm text-[var(--sl-text-primary)]">
+                  Flag if answered
+                </label>
+                {alertConfig.alert_on_any_value && (
+                  <SlSelect
+                    value={alertConfig.alert_severity || 'warning'}
+                    onValueChange={(val) => setAlertConfig({ ...alertConfig, alert_severity: val })}
+                  >
+                    <SlSelectTrigger className="w-28">
+                      <SlSelectValue />
+                    </SlSelectTrigger>
+                    <SlSelectContent>
+                      <SlSelectItem value="warning">Warning</SlSelectItem>
+                      <SlSelectItem value="critical">Critical</SlSelectItem>
+                    </SlSelectContent>
+                  </SlSelect>
+                )}
+              </div>
+              <p className="text-xs text-[var(--sl-text-muted)] mt-2">
+                When enabled, any response will appear in the symptom concerns on the dashboard
+              </p>
             </div>
           )}
 

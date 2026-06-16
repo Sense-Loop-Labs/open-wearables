@@ -193,6 +193,19 @@ export interface PatientSummary {
   last_alert_at: string | null;
   last_sync_at: string | null;
   updated_at: string;
+  // Questionnaire concerns
+  has_questionnaire_concerns: boolean;
+  questionnaire_concern_count: number;
+  highest_questionnaire_severity: 'warning' | 'critical' | null;
+  questionnaire_concerns: QuestionnaireConcern[] | null;
+  last_questionnaire_response_at: string | null;
+}
+
+export interface QuestionnaireConcern {
+  question_text: string;
+  answer_text: string;
+  severity: 'warning' | 'critical';
+  question_code: string;
 }
 
 export type PatientOverallStatus = 'good' | 'warning' | 'critical' | 'no_data';
@@ -843,10 +856,11 @@ export interface QuestionOption {
 }
 
 export interface QuestionAlertConfig {
-  trigger_values: string[];
-  alert_severity: 'info' | 'warning' | 'critical';
+  trigger_values?: string[];
+  alert_severity?: 'info' | 'warning' | 'critical';
   alert_message?: string;
   severity_by_value?: Record<string, 'info' | 'warning' | 'critical'>;
+  alert_on_any_value?: boolean;
 }
 
 export interface QuestionValidation {

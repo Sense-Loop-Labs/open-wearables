@@ -407,7 +407,7 @@ function PatientRow({ patient, alerts, isExpanded, onToggle, onOpenModal }: Pati
 
         {/* Alerts */}
         <td>
-          <AlertBadges alerts={alerts} />
+          <AlertBadges alerts={alerts} summary={summary} />
         </td>
 
         {/* Last Action */}
@@ -549,14 +549,20 @@ function abbreviateAlertTitle(title: string): string {
     .replace(' Alert', '');
 }
 
-function AlertBadges({ alerts }: { alerts: Alert[] }) {
-  if (alerts.length === 0) {
+function AlertBadges({ alerts, summary }: { alerts: Alert[]; summary?: Patient['summary'] }) {
+  // Filter out questionnaire alerts from the vital alerts display
+  const vitalAlerts = alerts.filter(a => a.category !== 'questionnaire');
+  const hasSymptomConcerns = summary?.has_questionnaire_concerns;
+  const symptomCount = summary?.questionnaire_concern_count ?? 0;
+  const symptomSeverity = summary?.highest_questionnaire_severity;
+
+  if (vitalAlerts.length === 0 && !hasSymptomConcerns) {
     return <span className="text-sm text-[var(--sl-text-muted)]">None</span>;
   }
 
-  const firstRow = alerts.slice(0, 2);
-  const thirdAlert = alerts[2];
-  const remaining = alerts.length - 3;
+  const firstRow = vitalAlerts.slice(0, 2);
+  const thirdAlert = vitalAlerts[2];
+  const remaining = vitalAlerts.length - 3;
 
   const getSeverityStyle = (severity: Alert['severity']) => {
     switch (severity) {
@@ -595,6 +601,22 @@ function AlertBadges({ alerts }: { alerts: Alert[] }) {
           {remaining > 0 && (
             <span className="text-xs text-[var(--sl-text-muted)]">+{remaining} more</span>
           )}
+        </div>
+      )}
+      {/* Symptom Concerns badge */}
+      {hasSymptomConcerns && (
+        <div className="flex items-center gap-1">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border',
+              symptomSeverity === 'critical'
+                ? 'bg-red-50 text-red-700 border-red-200'
+                : 'bg-violet-50 text-violet-700 border-violet-200'
+            )}
+          >
+            <MessageSquare className="w-3 h-3" />
+            {symptomCount === 1 ? '1 Symptom' : `${symptomCount} Symptoms`}
+          </span>
         </div>
       )}
     </div>
@@ -682,20 +704,56 @@ function ExpandedPatientDetails({
           </div>
         </div>
 
-        {/* Latest Symptom */}
+        {/* Symptom Concerns */}
         <div>
           <h4 className="text-sm font-semibold text-[var(--sl-text-primary)] mb-3 flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
-            Latest Symptom Reported
+            Symptom Concerns
+            {summary?.has_questionnaire_concerns && (
+              <span className={cn(
+                'px-1.5 py-0.5 text-xs font-medium rounded',
+                summary.highest_questionnaire_severity === 'critical'
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-violet-100 text-violet-700'
+              )}>
+                {summary.questionnaire_concern_count}
+              </span>
+            )}
           </h4>
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <p className="text-sm text-gray-700 italic">
-              "No symptoms reported"
-            </p>
-            <p className="text-xs text-gray-400 mt-2">
-              Last checked: {new Date().toLocaleDateString()}
-            </p>
-          </div>
+          {summary?.questionnaire_concerns && summary.questionnaire_concerns.length > 0 ? (
+            <div className="space-y-2">
+              {summary.questionnaire_concerns.map((concern, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'bg-white border rounded-lg p-3',
+                    concern.severity === 'critical'
+                      ? 'border-l-4 border-l-red-500 border-gray-200'
+                      : 'border-l-4 border-l-yellow-500 border-gray-200'
+                  )}
+                >
+                  <p className="text-xs text-gray-500">{concern.question_text}</p>
+                  <p className="text-sm font-medium text-gray-900 mt-1">{concern.answer_text}</p>
+                </div>
+              ))}
+              {summary.last_questionnaire_response_at && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Reported: {new Date(summary.last_questionnaire_response_at).toLocaleString()}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-lg p-3">
+              <p className="text-sm text-gray-500 italic">
+                No symptom concerns reported
+              </p>
+              {summary?.last_questionnaire_response_at && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Last response: {new Date(summary.last_questionnaire_response_at).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Quick Actions */}

@@ -98,6 +98,12 @@ def _patient_to_response(patient, db: Session) -> PatientResponse:
             active_critical_alerts_count=patient.summary.active_critical_alerts_count,
             overall_status=patient.summary.overall_status,
             last_data_received_at=patient.summary.last_data_received_at,
+            # Questionnaire concerns
+            has_questionnaire_concerns=patient.summary.has_questionnaire_concerns,
+            questionnaire_concern_count=patient.summary.questionnaire_concern_count,
+            highest_questionnaire_severity=patient.summary.highest_questionnaire_severity,
+            questionnaire_concerns=patient.summary.questionnaire_concerns,
+            last_questionnaire_response_at=patient.summary.last_questionnaire_response_at,
         )
 
     return PatientResponse(

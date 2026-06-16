@@ -608,6 +608,11 @@ async def get_care_plan(
             )
         )
 
+    # Get last questionnaire completion time from patient summary
+    last_questionnaire_completed_at = None
+    if patient.summary:
+        last_questionnaire_completed_at = patient.summary.last_questionnaire_response_at
+
     return CarePlanResponse(
         patient_id=patient.id,
         care_plans=[
@@ -625,6 +630,7 @@ async def get_care_plan(
         follow_up_appointments=follow_up_appointments,
         emergency_contacts=emergency_contacts,
         pending_questionnaires=pending_questionnaires,
+        last_questionnaire_completed_at=last_questionnaire_completed_at,
     )
 
 
