@@ -536,6 +536,71 @@ export default $config({
     }
 
     // ================================================================
+    // BASTION HOST (for database access via SSM port forwarding)
+    // ================================================================
+    // Only create in non-production for dev/debugging access
+    let bastionInstanceId: pulumi.Output<string> | undefined;
+
+    if (!isProduction) {
+      const bastionRole = new aws.iam.Role("BastionRole", {
+        assumeRolePolicy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [{
+            Action: "sts:AssumeRole",
+            Effect: "Allow",
+            Principal: { Service: "ec2.amazonaws.com" },
+          }],
+        }),
+      });
+
+      new aws.iam.RolePolicyAttachment("BastionSsmPolicy", {
+        role: bastionRole.name,
+        policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+      });
+
+      const bastionProfile = new aws.iam.InstanceProfile("BastionProfile", {
+        role: bastionRole.name,
+      });
+
+      const bastionSg = new aws.ec2.SecurityGroup("BastionSecurityGroup", {
+        vpcId: vpc.id,
+        description: "Security group for bastion host",
+        egress: [
+          {
+            protocol: "-1",
+            fromPort: 0,
+            toPort: 0,
+            cidrBlocks: ["0.0.0.0/0"],
+          },
+        ],
+      });
+
+      // Get latest Amazon Linux 2023 AMI
+      const ami = aws.ec2.getAmi({
+        mostRecent: true,
+        owners: ["amazon"],
+        filters: [
+          { name: "name", values: ["al2023-ami-*-arm64"] },
+          { name: "state", values: ["available"] },
+        ],
+      });
+
+      const bastion = new aws.ec2.Instance("Bastion", {
+        ami: ami.then(a => a.id),
+        instanceType: "t4g.nano",
+        subnetId: publicSubnetIds[0],
+        vpcSecurityGroupIds: [bastionSg.id],
+        iamInstanceProfile: bastionProfile.name,
+        associatePublicIpAddress: true,
+        tags: {
+          Name: `open-wearables-${stage}-bastion`,
+        },
+      });
+
+      bastionInstanceId = bastion.id;
+    }
+
+    // ================================================================
     // OUTPUTS
     // ================================================================
     const outputs: Record<string, unknown> = {
@@ -550,6 +615,10 @@ export default $config({
 
     if (frontendUrl) {
       outputs.frontendUrl = frontendUrl;
+    }
+
+    if (bastionInstanceId) {
+      outputs.bastionInstanceId = bastionInstanceId;
     }
 
     // Security summary
