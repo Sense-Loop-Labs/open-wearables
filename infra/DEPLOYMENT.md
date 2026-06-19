@@ -58,7 +58,7 @@ This guide covers deploying Open Wearables to AWS using SST (Serverless Stack).
 | **Beat** | Celery Beat scheduler for periodic tasks |
 | **Redis** | Message broker for Celery + caching |
 | **PostgreSQL** | Primary database (RDS) |
-| **Frontend** | React SPA on S3 + CloudFront |
+| **Frontend** | TanStack Start SSR app (requires ECS deployment - TODO) |
 | **ALB** | Application Load Balancer with HTTPS |
 
 ---
@@ -214,10 +214,9 @@ npx sst secret list --stage staging
 ```bash
 # Deploy backend only (API + Worker+Beat + ElastiCache)
 npm run deploy:pre-pilot
-
-# Deploy with frontend dashboard
-npm run deploy:pre-pilot:with-frontend
 ```
+
+> **Note:** Frontend deployment (`DEPLOY_FRONTEND=true`) is not yet supported. The frontend uses TanStack Start with SSR which requires server-side rendering. It needs to be deployed as an ECS service or Lambda, not as a static S3 site. For now, run the frontend locally with `npm run dev` in the `/frontend` directory.
 
 ### Pilot Deployment
 

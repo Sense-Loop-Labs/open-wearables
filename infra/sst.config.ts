@@ -475,7 +475,15 @@ export default $config({
     }
 
     // ================================================================
-    // FRONTEND (S3 + CloudFront for all environments)
+    // FRONTEND
+    // ================================================================
+    // TODO: The frontend uses TanStack Start with Nitro SSR and cannot be
+    // deployed as a static site. It needs to be deployed as an ECS service
+    // or Lambda@Edge for server-side rendering. For now, run locally with
+    // `npm run dev` in the frontend directory.
+    //
+    // The StaticSite deployment below only works for pure static/SPA apps.
+    // Leaving commented out until we implement SSR deployment.
     // ================================================================
     const frontendDomain = isProduction
       ? "dashboard.wearables.senseloop.health"
@@ -484,12 +492,14 @@ export default $config({
     let frontendUrl: string | undefined;
 
     if (deployFrontend) {
+      console.warn("⚠️  Frontend deployment is experimental - TanStack Start requires SSR");
       // Build frontend and deploy to S3 + CloudFront
+      // NOTE: This only deploys static assets, not the SSR server
       const frontend = new sst.aws.StaticSite("Frontend", {
         path: "../frontend",
         build: {
-          command: "pnpm run build",
-          output: "dist",
+          command: "npm run build",
+          output: ".output/public",
         },
         environment: {
           VITE_API_URL: `https://${apiDomain}`,
