@@ -15,6 +15,12 @@ Environment variables (with SL_ prefix):
   SL_DEFAULT_ORG_SLUG  - Organization slug (default: demo-clinic)
 """
 
+import sys
+from pathlib import Path
+
+# Add backend to path (script is in scripts/init/, so go up 2 levels)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from datetime import datetime
 from uuid import uuid4
 
