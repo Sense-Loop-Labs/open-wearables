@@ -36,21 +36,8 @@ from .garmin.backfill_trigger import (
 )
 from .garmin.gc_task import gc_stuck_backfills
 
-# SENSE-LOOP: Medplum FHIR integration tasks for clinical data sync
-from .medplum_tasks import (
-    aggregate_hr_hourly,
-    calculate_hr_baselines,
-    process_hr_batch_for_medplum,
-    process_hr_for_medplum,
-    send_sleep_batch_to_medplum,
-    send_sleep_to_medplum,
-    send_vitals_batch_to_medplum,
-    send_vitals_to_medplum,
-    send_workout_to_medplum,
-)
-
 # SENSE-LOOP: Native alert engine integration
-from .sense_loop_tasks import process_vitals_for_sense_loop
+from .sense_loop_tasks import calculate_hr_baselines, process_vitals_for_sense_loop
 
 # SENSE-LOOP: Instruction template tasks
 from .instruction_tasks import (
@@ -101,18 +88,9 @@ __all__ = [
     "process_webhook_push",
     # Outgoing webhooks
     "emit_webhook_event",
-    # Medplum FHIR integration (Sense Loop Addition)
-    "process_hr_for_medplum",
-    "process_hr_batch_for_medplum",
-    "aggregate_hr_hourly",
-    "calculate_hr_baselines",
-    "send_vitals_to_medplum",
-    "send_vitals_batch_to_medplum",
-    "send_workout_to_medplum",
-    "send_sleep_to_medplum",
-    "send_sleep_batch_to_medplum",
     # Sense Loop native alert engine
     "process_vitals_for_sense_loop",
+    "calculate_hr_baselines",
     # Sense Loop instruction tasks
     "generate_daily_tasks",
     "process_task_notifications",

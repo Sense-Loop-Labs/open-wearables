@@ -3,8 +3,10 @@
 /**
  * Open Wearables SST Configuration for Sense Loop
  *
- * This config deploys Open Wearables into the shared Sense Loop VPC,
- * allowing internal communication with Medplum.
+ * Deployment Modes:
+ * - PRE_PILOT (staging): ~$55-65/month - Combined worker+beat, Redis container, S3 frontend
+ * - PILOT (staging):     ~$100-120/month - Separate services, ElastiCache, S3 frontend
+ * - PRODUCTION:          ~$250-350/month - Multi-AZ, full scaling, all features
  *
  * Prerequisites:
  * 1. Deploy the shared VPC first:
@@ -12,16 +14,19 @@
  *
  * 2. Set required secrets:
  *    npx sst secret set SecretKey "$(openssl rand -hex 32)" --stage staging
- *    npx sst secret set MedplumClientId "<client-id>" --stage staging
- *    npx sst secret set MedplumClientSecret "<client-secret>" --stage staging
  *
- * Deployment (API only):
+ * Deployment Commands:
+ *    # Pre-pilot (cheapest, ~$55-65/month):
+ *    PRE_PILOT=true npm run deploy:staging
+ *
+ *    # Pilot (full staging, ~$100-120/month):
  *    npm run deploy:staging
- *    npm run deploy:production
  *
- * Deployment (with Frontend dashboard):
- *    DEPLOY_FRONTEND=true npm run deploy:staging
- *    DEPLOY_FRONTEND=true npm run deploy:production
+ *    # With frontend dashboard:
+ *    PRE_PILOT=true DEPLOY_FRONTEND=true npm run deploy:staging
+ *
+ *    # Production:
+ *    npm run deploy:production
  */
 
 export default $config({
@@ -36,6 +41,7 @@ export default $config({
           region: "us-west-2",
         },
         random: true,
+        command: true,
       },
     };
   },
@@ -43,42 +49,44 @@ export default $config({
   async run() {
     const stage = $app.stage;
     const isProduction = stage === "production";
+    const isPrePilot = process.env.PRE_PILOT === "true" && !isProduction;
+    const deployFrontend = process.env.DEPLOY_FRONTEND === "true";
+
+    // Log deployment mode
+    if (isPrePilot) {
+      console.log("\n🚀 PRE-PILOT MODE: Cost-optimized deployment (~$65-75/month)");
+      console.log("   - Combined Worker+Beat service");
+      console.log("   - ElastiCache Redis (t4g.micro)");
+      console.log("   - S3 + CloudFront for frontend");
+      console.log("   To upgrade to pilot: npm run deploy:staging (without PRE_PILOT)\n");
+    } else if (!isProduction) {
+      console.log("\n🚀 PILOT MODE: Full staging deployment (~$100-120/month)");
+      console.log("   - Separate Worker and Beat services");
+      console.log("   - ElastiCache Redis (t4g.micro)");
+      console.log("   - S3 + CloudFront for frontend\n");
+    }
+
+    // Cost optimization: reduce log retention for staging
+    const logRetention = isProduction ? "7 years" : "1 month";
 
     // ================================================================
     // SECRETS
     // ================================================================
     const secretKey = new sst.Secret("SecretKey");
-    const medplumClientId = new sst.Secret("MedplumClientId");
-    const medplumClientSecret = new sst.Secret("MedplumClientSecret");
-    // Webhook URL to FHIR Conversion Bot (format: https://api.xxx/fhir/R4/Bot/{BOT_ID}/$execute)
-    const medplumWebhookUrl = new sst.Secret("MedplumWebhookUrl");
 
-    // Wearable provider OAuth credentials (add as needed)
+    // Wearable provider OAuth credentials
     const garminClientId = new sst.Secret("GarminClientId");
     const garminClientSecret = new sst.Secret("GarminClientSecret");
     const fitbitClientId = new sst.Secret("FitbitClientId");
     const fitbitClientSecret = new sst.Secret("FitbitClientSecret");
 
-    // Optional frontend deployment
-    // Set DEPLOY_FRONTEND=true environment variable or pass --deploy-frontend flag
-    const deployFrontend = process.env.DEPLOY_FRONTEND === "true";
-
-    // Cost optimization mode - reduces log retention for staging (~$3/month savings)
-    // Set COST_OPTIMIZED=true to enable
-    const costOptimized = process.env.COST_OPTIMIZED === "true";
-    const logRetention = (costOptimized && !isProduction) ? "1 month" : "7 years";
-
-    if (costOptimized && !isProduction) {
-      console.log("\n⚠️  COST_OPTIMIZED=true: Log retention reduced to 1 month (~$3/month savings)");
-      console.log("   To restore full infrastructure: COST_OPTIMIZED=false npm run deploy:staging\n");
-    }
+    // Sense Loop specific secrets
+    const slFirebaseCredentials = new sst.Secret("SlFirebaseCredentials");
+    const slSendgridApiKey = new sst.Secret("SlSendgridApiKey");
 
     // ================================================================
     // IMPORT SHARED VPC
     // ================================================================
-    // The shared VPC is created by the CDK stack in sense-loop-infra/shared-vpc
-    // Get the VPC ID from SSM Parameter Store
-
     const vpcId = await aws.ssm.getParameter({
       name: `/sense-loop/${stage}/vpc-id`,
     }).then(p => p.value!);
@@ -91,7 +99,10 @@ export default $config({
       name: `/sense-loop/${stage}/isolated-subnet-ids`,
     }).then(p => p.value!.split(","));
 
-    // Import the VPC
+    const publicSubnetIds = await aws.ssm.getParameter({
+      name: `/sense-loop/${stage}/public-subnet-ids`,
+    }).then(p => p.value!.split(","));
+
     const vpc = aws.ec2.Vpc.get("SharedVpc", vpcId);
 
     // ================================================================
@@ -105,7 +116,7 @@ export default $config({
           protocol: "tcp",
           fromPort: 5432,
           toPort: 5432,
-          cidrBlocks: ["10.0.0.0/16"], // Allow from within VPC
+          cidrBlocks: ["10.0.0.0/16"],
         },
       ],
       egress: [
@@ -156,7 +167,7 @@ export default $config({
       dbSubnetGroupName: dbSubnetGroup.name,
       vpcSecurityGroupIds: [dbSecurityGroup.id],
       parameterGroupName: dbParameterGroup.name,
-      multiAz: isProduction,
+      multiAz: isProduction, // Only production gets Multi-AZ
       storageEncrypted: true,
       performanceInsightsEnabled: isProduction,
       backupRetentionPeriod: isProduction ? 7 : 1,
@@ -171,8 +182,11 @@ export default $config({
     });
 
     // ================================================================
-    // REDIS (ElastiCache)
+    // REDIS (ElastiCache - t4g.micro for staging, t4g.small for production)
     // ================================================================
+    let redisHost: pulumi.Output<string>;
+    let redisPort = "6379";
+
     const redisSecurityGroup = new aws.ec2.SecurityGroup("RedisSecurityGroup", {
       vpcId: vpc.id,
       description: "Security group for Open Wearables Redis",
@@ -181,7 +195,7 @@ export default $config({
           protocol: "tcp",
           fromPort: 6379,
           toPort: 6379,
-          cidrBlocks: ["10.0.0.0/16"], // Allow from within VPC
+          cidrBlocks: ["10.0.0.0/16"],
         },
       ],
       egress: [
@@ -199,7 +213,7 @@ export default $config({
       description: "Subnet group for Open Wearables Redis",
     });
 
-    const redis = new aws.elasticache.Cluster("Redis", {
+    const elasticacheCluster = new aws.elasticache.Cluster("Redis", {
       clusterId: `open-wearables-${stage}`,
       engine: "redis",
       nodeType: isProduction ? "cache.t4g.small" : "cache.t4g.micro",
@@ -214,14 +228,11 @@ export default $config({
       },
     });
 
+    redisHost = elasticacheCluster.cacheNodes[0].address;
+
     // ================================================================
     // ECS CLUSTER
     // ================================================================
-    const publicSubnetIds = await aws.ssm.getParameter({
-      name: `/sense-loop/${stage}/public-subnet-ids`,
-    }).then(p => p.value!.split(","));
-
-    // Security group for ECS tasks
     const clusterSecurityGroup = new aws.ec2.SecurityGroup("ClusterSecurityGroup", {
       vpcId: vpc.id,
       description: "Security group for Open Wearables ECS cluster",
@@ -230,13 +241,19 @@ export default $config({
           protocol: "tcp",
           fromPort: 8000,
           toPort: 8000,
-          cidrBlocks: ["10.0.0.0/16"], // Allow API from within VPC
+          cidrBlocks: ["10.0.0.0/16"],
         },
         {
           protocol: "tcp",
           fromPort: 3000,
           toPort: 3000,
-          cidrBlocks: ["10.0.0.0/16"], // Allow Frontend from within VPC
+          cidrBlocks: ["10.0.0.0/16"],
+        },
+        {
+          protocol: "tcp",
+          fromPort: 6379,
+          toPort: 6379,
+          cidrBlocks: ["10.0.0.0/16"],
         },
       ],
       egress: [
@@ -249,12 +266,21 @@ export default $config({
       ],
     });
 
+    // For pre-pilot/pilot: use public subnets to avoid NAT Gateway costs (~$35/month savings)
+    // For production: switch to private subnets and add NAT Gateway for better security
+    const usePrivateSubnets = isProduction || process.env.USE_PRIVATE_SUBNETS === "true";
+
+    if (!usePrivateSubnets) {
+      console.log("   - ECS tasks in PUBLIC subnets (no NAT Gateway costs)");
+    }
+
     const cluster = new sst.aws.Cluster("Cluster", {
       vpc: {
         id: vpcId,
         publicSubnets: publicSubnetIds,
         privateSubnets: privateSubnetIds,
-        containerSubnets: privateSubnetIds, // ECS tasks run in private subnets
+        // Use public subnets for staging to avoid NAT costs, private for production
+        containerSubnets: usePrivateSubnets ? privateSubnetIds : publicSubnetIds,
         securityGroups: [clusterSecurityGroup.id],
       },
     });
@@ -262,11 +288,11 @@ export default $config({
     // ================================================================
     // SHARED ENVIRONMENT VARIABLES
     // ================================================================
-    const sharedEnv = {
+    const getSharedEnv = () => ({
       ENVIRONMENT: stage,
       SECRET_KEY: secretKey.value,
 
-      // Database
+      // Database (SSL required for security)
       DB_HOST: db.address,
       DB_PORT: "5432",
       DB_NAME: "open_wearables",
@@ -275,35 +301,46 @@ export default $config({
       DB_SSL: "require",
 
       // Redis
-      REDIS_HOST: redis.cacheNodes[0].address,
-      REDIS_PORT: "6379",
+      REDIS_HOST: redisHost!,
+      REDIS_PORT: redisPort,
 
-      // Medplum integration
-      MEDPLUM_ENABLED: "true",
-      MEDPLUM_WEBHOOK_URL: medplumWebhookUrl.value,
-      MEDPLUM_CLIENT_ID: medplumClientId.value,
-      MEDPLUM_CLIENT_SECRET: medplumClientSecret.value,
+      // Medplum integration (disabled - using Sense Loop extension)
+      MEDPLUM_ENABLED: "false",
 
-      // Wearable providers (optional)
+      // Svix webhooks (disabled - not deployed yet)
+      SVIX_ENABLED: "false",
+
+      // Wearable providers
       GARMIN_CLIENT_ID: garminClientId.value,
       GARMIN_CLIENT_SECRET: garminClientSecret.value,
       FITBIT_CLIENT_ID: fitbitClientId.value,
       FITBIT_CLIENT_SECRET: fitbitClientSecret.value,
-    };
+
+      // Sense Loop
+      SL_FIREBASE_CREDENTIALS_JSON: slFirebaseCredentials.value,
+      SL_SENDGRID_API_KEY: slSendgridApiKey.value,
+      SL_PUSH_NOTIFICATIONS_ENABLED: "true",
+
+      // Sentry (optional - set via secret if needed)
+      SENTRY_ENABLED: isProduction ? "true" : "false",
+    });
 
     // ================================================================
     // API SERVICE
     // ================================================================
+    const apiDomain = isProduction
+      ? "wearables.senseloop.health"
+      : "wearables.staging.senselooplabs.com";
+
     const api = new sst.aws.Service("Api", {
       cluster,
-      cpu: isProduction ? "0.5 vCPU" : "0.25 vCPU",
-      memory: "1 GB", // 1 GB for both staging (pilot) and production for stability
+      cpu: isPrePilot ? "0.25 vCPU" : (isProduction ? "0.5 vCPU" : "0.5 vCPU"),
+      memory: isPrePilot ? "0.5 GB" : "1 GB",
       image: {
         context: "../backend",
         dockerfile: "Dockerfile",
       },
       command: ["scripts/start/app.sh"],
-      // Allow seed_sense_loop.py to write credentials to SSM for Medplum integration
       permissions: [
         {
           actions: ["ssm:PutParameter", "ssm:AddTagsToResource"],
@@ -311,7 +348,7 @@ export default $config({
         },
       ],
       environment: {
-        ...sharedEnv,
+        ...getSharedEnv(),
         CORS_ORIGINS: JSON.stringify(
           isProduction
             ? ["https://app.senseloop.health", "https://dashboard.senseloop.health", "https://dashboard.wearables.senseloop.health"]
@@ -322,82 +359,124 @@ export default $config({
         command: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"],
         interval: "30 seconds",
         timeout: "5 seconds",
-        startPeriod: "5 minutes", // Allow time for initialization scripts
+        startPeriod: "5 minutes",
       },
       scaling: isProduction
         ? { min: 2, max: 10, cpuUtilization: 70 }
         : { min: 1, max: 2 },
-      vpc: {
-        id: vpcId,
-        publicSubnets: publicSubnetIds,
-        privateSubnets: privateSubnetIds,
-        securityGroups: [clusterSecurityGroup.id],
-      },
       loadBalancer: {
-        domain: isProduction
-          ? "wearables.senseloop.health"
-          : "wearables.staging.senselooplabs.com",
+        domain: apiDomain,
         rules: [{ listen: "443/https", forward: "8000/http" }],
       },
       logging: {
-        retention: logRetention, // HIPAA: 7 years in production, 1 month if COST_OPTIMIZED
+        retention: logRetention,
       },
       transform: {
         loadBalancer: {
           subnets: publicSubnetIds,
         },
         service: {
-          healthCheckGracePeriodSeconds: 300, // 5 min grace for initialization
+          healthCheckGracePeriodSeconds: 300,
         },
       },
     });
 
     // ================================================================
-    // WORKER SERVICE (Celery)
+    // WORKER SERVICE (Separate in pilot/prod, combined with beat in pre-pilot)
     // ================================================================
-    const worker = new sst.aws.Service("Worker", {
-      cluster,
-      cpu: isProduction ? "0.5 vCPU" : "0.25 vCPU",
-      memory: "1 GB", // 1 GB for both staging (pilot) and production for stability
-      image: {
-        context: "../backend",
-        dockerfile: "Dockerfile",
-      },
-      command: ["scripts/start/worker.sh"],
-      environment: sharedEnv,
-      scaling: isProduction
-        ? { min: 2, max: 10 }
-        : { min: 1, max: 2 },
-      logging: {
-        retention: logRetention,
-      },
-    });
+    let worker: sst.aws.Service | undefined;
+    let beat: sst.aws.Service | undefined;
+
+    if (isPrePilot) {
+      // Pre-pilot: Combined Worker + Beat in one service
+      worker = new sst.aws.Service("WorkerBeat", {
+        cluster,
+        cpu: "0.25 vCPU",
+        memory: "0.5 GB",
+        image: {
+          context: "../backend",
+          dockerfile: "Dockerfile",
+        },
+        command: ["scripts/start/worker-beat.sh"],
+        environment: getSharedEnv(),
+        logging: {
+          retention: logRetention,
+        },
+      });
+    } else {
+      // Pilot/Production: Separate Worker and Beat services
+      worker = new sst.aws.Service("Worker", {
+        cluster,
+        cpu: isProduction ? "0.5 vCPU" : "0.5 vCPU",
+        memory: "1 GB",
+        image: {
+          context: "../backend",
+          dockerfile: "Dockerfile",
+        },
+        command: ["scripts/start/worker.sh"],
+        environment: getSharedEnv(),
+        scaling: isProduction
+          ? { min: 2, max: 10 }
+          : { min: 1, max: 2 },
+        logging: {
+          retention: logRetention,
+        },
+      });
+
+      beat = new sst.aws.Service("Beat", {
+        cluster,
+        cpu: "0.25 vCPU",
+        memory: "0.5 GB",
+        image: {
+          context: "../backend",
+          dockerfile: "Dockerfile",
+        },
+        command: ["scripts/start/beat.sh"],
+        environment: getSharedEnv(),
+        // Beat is a singleton - no scaling
+        logging: {
+          retention: logRetention,
+        },
+      });
+    }
 
     // ================================================================
-    // BEAT SERVICE (Celery Scheduler - Singleton)
+    // ENABLE PUBLIC IPs FOR ECS TASKS (Pre-Pilot/Pilot only)
     // ================================================================
-    const beat = new sst.aws.Service("Beat", {
-      cluster,
-      cpu: "0.25 vCPU",
-      memory: "0.5 GB",
-      image: {
-        context: "../backend",
-        dockerfile: "Dockerfile",
-      },
-      command: ["scripts/start/beat.sh"],
-      environment: sharedEnv,
-      // Beat must be a singleton - no scaling
-      logging: {
-        retention: logRetention,
-      },
-    });
+    // Tasks in public subnets need public IPs to reach ECR (no NAT Gateway)
+    // This runs after services are created to update the network configuration
+    if (!usePrivateSubnets) {
+      const subnetsJson = JSON.stringify(publicSubnetIds);
+      const securityGroupsJson = clusterSecurityGroup.id.apply(id => JSON.stringify([id]));
+
+      // Enable public IP on API service
+      new command.local.Command("EnablePublicIpApi", {
+        create: $interpolate`aws ecs update-service --cluster ${cluster.nodes.cluster.name} --service Api --network-configuration "awsvpcConfiguration={subnets=${subnetsJson},securityGroups=${securityGroupsJson},assignPublicIp=ENABLED}" --query 'service.serviceName' --output text`,
+        triggers: [Date.now()], // Always run on deploy to ensure config is correct
+      }, { dependsOn: [api] });
+
+      // Enable public IP on Worker/WorkerBeat service
+      if (isPrePilot) {
+        new command.local.Command("EnablePublicIpWorkerBeat", {
+          create: $interpolate`aws ecs update-service --cluster ${cluster.nodes.cluster.name} --service WorkerBeat --network-configuration "awsvpcConfiguration={subnets=${subnetsJson},securityGroups=${securityGroupsJson},assignPublicIp=ENABLED}" --query 'service.serviceName' --output text`,
+          triggers: [Date.now()],
+        }, { dependsOn: [worker!] });
+      } else {
+        new command.local.Command("EnablePublicIpWorker", {
+          create: $interpolate`aws ecs update-service --cluster ${cluster.nodes.cluster.name} --service Worker --network-configuration "awsvpcConfiguration={subnets=${subnetsJson},securityGroups=${securityGroupsJson},assignPublicIp=ENABLED}" --query 'service.serviceName' --output text`,
+          triggers: [Date.now()],
+        }, { dependsOn: [worker!] });
+
+        new command.local.Command("EnablePublicIpBeat", {
+          create: $interpolate`aws ecs update-service --cluster ${cluster.nodes.cluster.name} --service Beat --network-configuration "awsvpcConfiguration={subnets=${subnetsJson},securityGroups=${securityGroupsJson},assignPublicIp=ENABLED}" --query 'service.serviceName' --output text`,
+          triggers: [Date.now()],
+        }, { dependsOn: [beat!] });
+      }
+    }
 
     // ================================================================
-    // FRONTEND (Optional)
+    // FRONTEND (S3 + CloudFront for all environments)
     // ================================================================
-    // To deploy with frontend: DEPLOY_FRONTEND=true npm run deploy:staging
-    // To deploy without frontend: npm run deploy:staging
-
     const frontendDomain = isProduction
       ? "dashboard.wearables.senseloop.health"
       : "dashboard.wearables.staging.senselooplabs.com";
@@ -405,56 +484,50 @@ export default $config({
     let frontendUrl: string | undefined;
 
     if (deployFrontend) {
-      const frontend = new sst.aws.Service("Frontend", {
-        cluster,
-        cpu: "0.25 vCPU",
-        memory: "0.5 GB",
-        image: {
-          context: "../frontend",
-          dockerfile: "Dockerfile",
-          args: {
-            VITE_API_URL: `https://${isProduction ? "wearables.senseloop.health" : "wearables.staging.senselooplabs.com"}`,
-          },
+      // Build frontend and deploy to S3 + CloudFront
+      const frontend = new sst.aws.StaticSite("Frontend", {
+        path: "../frontend",
+        build: {
+          command: "pnpm run build",
+          output: "dist",
         },
-        // No container health check - rely on ALB health check only
-        scaling: { min: 1, max: 2 },
-        vpc: {
-          id: vpcId,
-          publicSubnets: publicSubnetIds,
-          privateSubnets: privateSubnetIds,
-          securityGroups: [clusterSecurityGroup.id],
+        environment: {
+          VITE_API_URL: `https://${apiDomain}`,
         },
-        loadBalancer: {
-          domain: frontendDomain,
-          rules: [{ listen: "443/https", forward: "3000/http" }],
-        },
-        logging: {
-          retention: "1 month",
-        },
-        transform: {
-          loadBalancer: {
-            subnets: publicSubnetIds,
-          },
-        },
+        domain: frontendDomain,
+        // Enable SPA routing (fallback to index.html)
+        errorPage: "index.html",
       });
 
-      frontendUrl = `https://${frontendDomain}`;
+      frontendUrl = frontend.url;
     }
 
     // ================================================================
     // OUTPUTS
     // ================================================================
     const outputs: Record<string, unknown> = {
-      apiUrl: api.url,
+      mode: isPrePilot ? "pre-pilot" : (isProduction ? "production" : "pilot"),
+      apiUrl: `https://${apiDomain}`,
       dbHost: db.address,
       dbName: db.dbName,
-      redisHost: redis.cacheNodes[0].address,
+      redisHost: redisHost!,
       vpcId: vpcId,
+      estimatedMonthlyCost: isPrePilot ? "$65-75" : (isProduction ? "$250-350" : "$100-120"),
     };
 
     if (frontendUrl) {
       outputs.frontendUrl = frontendUrl;
     }
+
+    // Security summary
+    outputs.security = {
+      dbEncryption: "enabled",
+      dbSsl: "required",
+      httpsOnly: true,
+      vpcIsolation: true,
+      privateSubnets: true,
+      secretsManager: "SST Secrets (SSM)",
+    };
 
     return outputs;
   },

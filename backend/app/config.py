@@ -184,37 +184,14 @@ class Settings(BaseSettings):
     raw_payload_s3_endpoint_url: str | None = None  # for S3-compatible storage (e.g. Railway Object Storage)
 
     # SVIX WEBHOOK SETTINGS
+    svix_enabled: bool = True  # Set to False to disable outgoing webhooks
     svix_server_url: str = "http://svix-server:8071"
     # Signing secret used by the Svix server to verify JWTs.  Must match SVIX_JWT_SECRET in docker-compose.
     svix_jwt_secret: SecretStr | None = None
     # Bearer token for the Svix API.  If unset, auto-generated from svix_jwt_secret at startup.
     svix_auth_token: SecretStr | None = None
 
-    # MEDPLUM FHIR INTEGRATION SETTINGS (Sense Loop Addition)
-    # Webhook URL to send data to Medplum FHIR Conversion Bot
-    medplum_webhook_url: str | None = None
-    # Shared secret for webhook authentication
-    medplum_webhook_secret: SecretStr | None = None
-    # OAuth2 client credentials for Medplum API
-    medplum_client_id: str | None = None
-    medplum_client_secret: SecretStr | None = None
-    # Enable/disable Medplum integration
-    medplum_enabled: bool = False
-    # HR processing settings
-    medplum_hr_anomaly_sustained_seconds: int = 300  # 5 minutes for sustained anomaly
-    medplum_hr_buffer_ttl_hours: int = 2  # Keep 2 hours of HR data for aggregation
-    # Default HR thresholds (can be overridden per patient)
-    medplum_hr_high_resting: int = 100
-    medplum_hr_high_active: int = 150
-    medplum_hr_high_exercise: int = 180
-    medplum_hr_low_resting: int = 50
-    medplum_hr_low_sleeping: int = 40
-    # SENSE-LOOP: Batching settings for vitals dispatch to Medplum
-    # Batches reduce HTTP requests to avoid Medplum rate limits (429 errors)
-    medplum_vitals_batch_size: int = 500  # Max samples per batch request
-    medplum_historical_threshold_hours: int = 8  # Data older than this is flagged as historical
-
-    # HR anomaly detection settings (Sense Loop Addition)
+    # HR anomaly detection settings (Sense Loop)
     # Used by context_detector.py and hr_processor.py for intelligent HR alerting
     hr_anomaly_sustained_minutes: int = 5  # Wait 5 min before alerting for sustained anomaly
     hr_anomaly_min_readings: int = 3  # Require 3+ readings before confirming anomaly

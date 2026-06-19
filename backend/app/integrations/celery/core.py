@@ -138,12 +138,9 @@ def create_celery() -> Celery:
             "args": (),
             "kwargs": {},
         },
-        # SENSE-LOOP: HR processing tasks
-        # calculate-hr-baselines-nightly: Computes personalized HR baselines for anomaly detection
-        # NOTE: aggregate-hr-hourly has been retired - no longer sending to Medplum
-        # HR alerts now use activity-aware detection via hr_anomaly_service directly
+        # SENSE-LOOP: HR baseline calculation for anomaly detection
         "calculate-hr-baselines-nightly": {
-            "task": "app.integrations.celery.tasks.medplum_tasks.calculate_hr_baselines",
+            "task": "sense_loop.calculate_hr_baselines",
             "schedule": crontab(hour=4, minute=0),  # Daily at 04:00 UTC
             "args": (),
             "kwargs": {},
