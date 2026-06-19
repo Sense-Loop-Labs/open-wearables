@@ -475,16 +475,9 @@ export default $config({
     }
 
     // ================================================================
-    // FRONTEND
+    // FRONTEND (ECS Service with Nitro SSR)
     // ================================================================
-    // TODO: The frontend uses TanStack Start with Nitro SSR and cannot be
-    // deployed as a static site. It needs to be deployed as an ECS service
-    // or Lambda@Edge for server-side rendering. For now, run locally with
-    // `npm run dev` in the frontend directory.
-    //
-    // The StaticSite deployment below only works for pure static/SPA apps.
-    // Leaving commented out until we implement SSR deployment.
-    // ================================================================
+    // The frontend uses TanStack Start with Nitro SSR - deployed as ECS service
     const frontendDomain = isProduction
       ? "dashboard.wearables.senseloop.health"
       : "dashboard.wearables.staging.senselooplabs.com";
@@ -492,24 +485,49 @@ export default $config({
     let frontendUrl: string | undefined;
 
     if (deployFrontend) {
-      console.warn("⚠️  Frontend deployment is experimental - TanStack Start requires SSR");
-      // Build frontend and deploy to S3 + CloudFront
-      // NOTE: This only deploys static assets, not the SSR server
-      const frontend = new sst.aws.StaticSite("Frontend", {
-        path: "../frontend",
-        build: {
-          command: "npm run build",
-          output: ".output/public",
+      const frontend = new sst.aws.Service("Frontend", {
+        cluster,
+        cpu: "0.25 vCPU",
+        memory: "0.5 GB",
+        image: {
+          context: "../frontend",
+          dockerfile: "Dockerfile",
+          args: {
+            VITE_API_URL: `https://${apiDomain}`,
+          },
         },
-        environment: {
-          VITE_API_URL: `https://${apiDomain}`,
+        health: {
+          command: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"],
+          interval: "30 seconds",
+          timeout: "5 seconds",
+          startPeriod: "2 minutes",
         },
-        domain: frontendDomain,
-        // Enable SPA routing (fallback to index.html)
-        errorPage: "index.html",
+        loadBalancer: {
+          domain: frontendDomain,
+          rules: [{ listen: "443/https", forward: "3000/http" }],
+        },
+        logging: {
+          retention: logRetention,
+        },
+        transform: {
+          loadBalancer: {
+            subnets: publicSubnetIds,
+          },
+        },
       });
 
-      frontendUrl = frontend.url;
+      frontendUrl = `https://${frontendDomain}`;
+
+      // Enable public IP for frontend service (pre-pilot/pilot only)
+      if (!usePrivateSubnets) {
+        const subnetsJson = JSON.stringify(publicSubnetIds);
+        const securityGroupsJson = clusterSecurityGroup.id.apply(id => JSON.stringify([id]));
+
+        new command.local.Command("EnablePublicIpFrontend", {
+          create: $interpolate`aws ecs update-service --cluster ${cluster.nodes.cluster.name} --service Frontend --network-configuration "awsvpcConfiguration={subnets=${subnetsJson},securityGroups=${securityGroupsJson},assignPublicIp=ENABLED}" --query 'service.serviceName' --output text`,
+          triggers: [Date.now()],
+        }, { dependsOn: [frontend] });
+      }
     }
 
     // ================================================================

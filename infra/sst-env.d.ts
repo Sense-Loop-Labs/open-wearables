@@ -10,6 +10,9 @@ declare module "sst" {
       "type": "sst.aws.Service"
       "url": string
     }
+    "Beat": {
+      "type": "sst.aws.Service"
+    }
     "FitbitClientId": {
       "type": "sst.sst.Secret"
       "value": string
@@ -17,6 +20,10 @@ declare module "sst" {
     "FitbitClientSecret": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "Frontend": {
+      "type": "sst.aws.Service"
+      "url": string
     }
     "GarminClientId": {
       "type": "sst.sst.Secret"
@@ -38,7 +45,7 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "WorkerBeat": {
+    "Worker": {
       "type": "sst.aws.Service"
     }
   }
