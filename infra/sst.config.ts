@@ -83,6 +83,7 @@ export default $config({
     // Sense Loop specific secrets
     const slFirebaseCredentials = new sst.Secret("SlFirebaseCredentials");
     const slSendgridApiKey = new sst.Secret("SlSendgridApiKey");
+    const slAdminPassword = new sst.Secret("SlAdminPassword");
 
     // ================================================================
     // IMPORT SHARED VPC
@@ -320,6 +321,10 @@ export default $config({
       SL_FIREBASE_CREDENTIALS_JSON: slFirebaseCredentials.value,
       SL_SENDGRID_API_KEY: slSendgridApiKey.value,
       SL_PUSH_NOTIFICATIONS_ENABLED: "true",
+      SL_ADMIN_PASSWORD: slAdminPassword.value,
+      SL_APP_BASE_URL: isProduction
+        ? "https://dashboard.wearables.senseloop.health"
+        : "https://dashboard.wearables.staging.senselooplabs.com",
 
       // Sentry (optional - set via secret if needed)
       SENTRY_ENABLED: isProduction ? "true" : "false",

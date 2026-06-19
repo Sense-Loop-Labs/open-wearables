@@ -34,6 +34,10 @@ uv run python scripts/init/seed_archival_settings.py
 echo 'Seeding Sense Loop application...'
 uv run python scripts/init/seed_sense_loop.py
 
+# Seed Sense Loop admin practitioner (for dashboard access)
+echo 'Seeding Sense Loop admin...'
+uv run python scripts/init/seed_sl_admin.py
+
 # Register webhook event types with Svix (with retry, non-fatal)
 echo 'Registering webhook event types...'
 for i in 1 2 3; do

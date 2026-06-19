@@ -25,6 +25,16 @@ class SenseLoopSettings(BaseSettings):
     # Feature flag to enable/disable the extension
     enabled: bool = True
 
+    # Bootstrap admin credentials (for initial setup)
+    admin_email: str = "admin@senseloop.health"
+    admin_password: SecretStr = SecretStr("changeme123!")
+    admin_first_name: str = "System"
+    admin_last_name: str = "Admin"
+
+    # Default organization for bootstrap
+    default_org_name: str = "Demo Clinic"
+    default_org_slug: str = "demo-clinic"
+
     # Enrollment settings
     activation_code_length: int = 8
     activation_code_expire_hours: int = 72
