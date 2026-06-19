@@ -34,6 +34,10 @@ uv run python scripts/init/seed_archival_settings.py
 echo 'Seeding Sense Loop application...'
 uv run python scripts/init/seed_sense_loop.py
 
+# Seed Sense Loop role definitions (required before admin)
+echo 'Seeding Sense Loop roles...'
+uv run python scripts/seed_sl_roles.py
+
 # Seed Sense Loop admin practitioner (for dashboard access)
 echo 'Seeding Sense Loop admin...'
 uv run python scripts/init/seed_sl_admin.py
