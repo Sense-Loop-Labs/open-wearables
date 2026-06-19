@@ -42,6 +42,10 @@ uv run python scripts/seed_sl_roles.py
 echo 'Seeding Sense Loop admin...'
 uv run python scripts/init/seed_sl_admin.py
 
+# Seed sample questionnaires
+echo 'Seeding questionnaires...'
+uv run python scripts/seed_questionnaires.py
+
 # Register webhook event types with Svix (with retry, non-fatal)
 echo 'Registering webhook event types...'
 for i in 1 2 3; do
