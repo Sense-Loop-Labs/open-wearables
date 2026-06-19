@@ -10,9 +10,6 @@ declare module "sst" {
       "type": "sst.aws.Service"
       "url": string
     }
-    "Beat": {
-      "type": "sst.aws.Service"
-    }
     "FitbitClientId": {
       "type": "sst.sst.Secret"
       "value": string
@@ -29,23 +26,19 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "MedplumClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "MedplumClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "MedplumWebhookUrl": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
     "SecretKey": {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Worker": {
+    "SlFirebaseCredentials": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "SlSendgridApiKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "WorkerBeat": {
       "type": "sst.aws.Service"
     }
   }
