@@ -27,6 +27,16 @@ from sense_loop.services import InviteService, NotificationService, Practitioner
 router = APIRouter()
 
 
+def _get_max_privilege_level(practitioner, organization_id: UUID) -> int:
+    """Get the highest privilege level for a practitioner in an organization."""
+    max_privilege = 0
+    for role in practitioner.practitioner_roles:
+        if role.organization_id == organization_id and role.is_active:
+            if role.role_definition and role.role_definition.privilege_level > max_privilege:
+                max_privilege = role.role_definition.privilege_level
+    return max_privilege
+
+
 @router.get("/roles", response_model=list[RoleDefinitionResponse])
 async def list_assignable_roles(
     db: DbSession,
@@ -520,6 +530,16 @@ async def update_clinician(
             detail="Not authorized to manage clinicians",
         )
 
+    # Check privilege level - can only edit clinicians at or below your level
+    user_privilege = _get_max_privilege_level(practitioner, organization_id)
+    clinician_privilege = _get_max_privilege_level(clinician, organization_id)
+
+    if clinician_privilege > user_privilege:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot edit a clinician with higher privileges than your own",
+        )
+
     # Update
     clinician = service.update(clinician, request)
 
@@ -572,6 +592,16 @@ async def deactivate_clinician(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot deactivate your own account",
+        )
+
+    # Check privilege level - can only deactivate clinicians at or below your level
+    user_privilege = _get_max_privilege_level(practitioner, organization_id)
+    clinician_privilege = _get_max_privilege_level(clinician, organization_id)
+
+    if clinician_privilege > user_privilege:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot deactivate a clinician with higher privileges than your own",
         )
 
     service.deactivate(clinician)

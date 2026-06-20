@@ -65,7 +65,7 @@ import {
   useSlRoles,
 } from '@/hooks/api/use-sl-clinicians';
 import type { PractitionerInvite, PractitionerWithRoles, RoleDefinition } from '@/lib/api/types/sense-loop';
-import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
+import { getSlCurrentOrgId, getSlCurrentPractitioner } from '@/lib/auth/sl-session';
 
 export const Route = createFileRoute('/sl/_sl-authenticated/clinicians/')({
   component: SlCliniciansPage,
@@ -79,6 +79,11 @@ function SlCliniciansPage() {
   const { data: clinicians, isLoading } = useSlClinicians();
   const { data: pendingInvites, isLoading: isLoadingInvites } = useSlPendingInvites();
   const { data: roles } = useSlRoles();
+
+  // Get current user's privilege level
+  const currentPractitioner = getSlCurrentPractitioner();
+  const currentUserRoleCode = currentPractitioner?.currentOrg?.role;
+  const currentUserPrivilegeLevel = roles?.find(r => r.code === currentUserRoleCode)?.privilege_level ?? 0;
 
   // Filter clinicians based on search
   const filteredClinicians = clinicians?.items?.filter(
@@ -216,6 +221,8 @@ function SlCliniciansPage() {
                     key={clinician.id}
                     clinician={clinician}
                     onDeactivate={() => setDeactivateDialog(clinician)}
+                    currentUserPrivilegeLevel={currentUserPrivilegeLevel}
+                    roles={roles ?? []}
                   />
                 ))}
               </>
@@ -247,13 +254,19 @@ function SlCliniciansPage() {
 interface ClinicianRowProps {
   clinician: PractitionerWithRoles;
   onDeactivate: () => void;
+  currentUserPrivilegeLevel: number;
+  roles: RoleDefinition[];
 }
 
-function ClinicianRow({ clinician, onDeactivate }: ClinicianRowProps) {
+function ClinicianRow({ clinician, onDeactivate, currentUserPrivilegeLevel, roles }: ClinicianRowProps) {
   const currentOrgId = getSlCurrentOrgId();
   const orgRole = clinician.roles?.find(
     (r) => r.organization_id === currentOrgId
   );
+
+  // Check if current user can manage this clinician (must have >= privilege level)
+  const clinicianPrivilegeLevel = roles.find(r => r.code === orgRole?.role_code)?.privilege_level ?? 0;
+  const canManage = currentUserPrivilegeLevel >= clinicianPrivilegeLevel;
 
   return (
     <TableRow className="border-[var(--sl-border)] hover:bg-[var(--sl-bg-muted)]">
@@ -293,30 +306,34 @@ function ClinicianRow({ clinician, onDeactivate }: ClinicianRowProps) {
         </span>
       </TableCell>
       <TableCell className="text-right">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="bg-white border-[var(--sl-border)]">
-            <DropdownMenuItem asChild className="text-[var(--sl-text-secondary)]">
-              <Link to="/sl/clinicians/$clinicianId" params={{ clinicianId: clinician.id }}>
-                <UserCog className="h-4 w-4 mr-2" />
-                Edit
-              </Link>
-            </DropdownMenuItem>
-            {clinician.is_active && (
-              <DropdownMenuItem
-                onClick={onDeactivate}
-                className="text-red-600 focus:text-red-600"
-              >
-                <UserMinus className="h-4 w-4 mr-2" />
-                Deactivate
+        {canManage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-white border-[var(--sl-border)]">
+              <DropdownMenuItem asChild className="text-[var(--sl-text-secondary)]">
+                <Link to="/sl/clinicians/$clinicianId" params={{ clinicianId: clinician.id }}>
+                  <UserCog className="h-4 w-4 mr-2" />
+                  Edit
+                </Link>
               </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {clinician.is_active && (
+                <DropdownMenuItem
+                  onClick={onDeactivate}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <UserMinus className="h-4 w-4 mr-2" />
+                  Deactivate
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <span className="text-xs text-[var(--sl-text-muted)]">-</span>
+        )}
       </TableCell>
     </TableRow>
   );
