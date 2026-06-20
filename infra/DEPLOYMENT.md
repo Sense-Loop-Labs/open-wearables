@@ -293,6 +293,67 @@ curl https://wearables.staging.senselooplabs.com/
 
 ---
 
+## Data Seeding (Container Startup)
+
+When the API container starts, it automatically runs initialization scripts in order. These are defined in `backend/scripts/start/app.sh`.
+
+### Seed Script Order
+
+| Order | Script | Description |
+|-------|--------|-------------|
+| 1 | `create_svix_db.py` | Creates Svix webhook database |
+| 2 | `alembic upgrade head` | Runs database migrations |
+| 3 | `init_provider_settings.py` | Initializes wearable provider settings |
+| 4 | `init_device_priorities.py` | Sets up device priority defaults |
+| 5 | `seed_admin.py` | Creates Open Wearables admin account |
+| 6 | `seed_series_types.py` | Initializes time series type definitions |
+| 7 | `seed_archival_settings.py` | Sets up data archival configuration |
+| 8 | `seed_sense_loop.py` | Creates Sense Loop app and API key |
+| 9 | `seed_sl_roles.py` | Seeds role definitions (9 system roles) |
+| 10 | `seed_sl_access_policies.py` | Seeds access policies and role-policy links |
+| 11 | `seed_sl_admin.py` | Creates Sense Loop admin practitioner |
+| 12 | `seed_questionnaires.py` | Seeds sample questionnaires |
+| 13 | `seed_instruction_templates.py` | Seeds instruction/activity templates |
+| 14 | `seed_webhook_event_types.py` | Registers webhook events with Svix |
+
+### Access Policy System (Cedar-based)
+
+The Sense Loop clinical dashboard uses a Cedar-based authorization system. The `seed_sl_access_policies.py` script seeds:
+
+**Access Policies (13 system policies):**
+- `patient_full_access` / `patient_read_only` - Patient record access
+- `alert_full_access` / `alert_acknowledge_only` / `alert_resolve` - Alert management
+- `care_plan_full_access` - Care plan access
+- `clinician_management` - Invite/manage clinicians
+- `org_settings_management` - Organization settings
+- `audit_log_access` - View audit logs
+- `alert_protocol_management` - Configure alert rules
+- `data_export` - Export patient data
+- `communication_full_access` / `communication_read_only` - Messaging
+
+**Role-Policy Links:**
+Each system role is linked to appropriate policies. For example:
+- `super_admin` - All policies
+- `doctor` - Patient, alert, care plan, data export, communication access
+- `nurse` - Patient, acknowledge alerts, care plan, communication access
+- `medical_assistant` - Patient, acknowledge alerts, read-only communication
+- `readonly` - Patient read-only
+
+### Sense Loop Admin Credentials
+
+The admin practitioner is created with credentials from environment variables:
+
+| Env Variable | Default | Description |
+|--------------|---------|-------------|
+| `SL_ADMIN_EMAIL` | `admin@senseloop.health` | Admin login email |
+| `SL_ADMIN_PASSWORD` | `changeme123!` | Admin login password |
+| `SL_DEFAULT_ORG_NAME` | `Demo Clinic` | Default organization name |
+| `SL_DEFAULT_ORG_SLUG` | `demo-clinic` | Organization URL slug |
+
+**Important:** If the admin practitioner already exists, the seed script will update the password to match `SL_ADMIN_PASSWORD`. This ensures password changes in env vars take effect on redeployment.
+
+---
+
 ## Scaling Up
 
 ### Pre-Pilot → Pilot
