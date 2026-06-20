@@ -5,7 +5,7 @@ import { isAuthenticated } from '@/lib/auth/session';
 import { ArrowRight, Mail, Lock, Loader2 } from 'lucide-react';
 import logotype from '@/logotype.svg';
 import { CodePreviewCard } from '@/components/login/code-preview-card';
-import { DEFAULT_REDIRECTS } from '@/lib/constants/routes';
+import { DEFAULT_REDIRECTS, SL_ROUTES } from '@/lib/constants/routes';
 import { getCopyrightText } from '@/lib/constants/app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,9 +14,12 @@ import { Label } from '@/components/ui/label';
 export const Route = createFileRoute('/login')({
   component: LoginPage,
   beforeLoad: () => {
+    // Always redirect /login to /sl/login (Sense Loop clinician dashboard)
+    // Works on both SSR and client
     if (typeof window !== 'undefined' && isAuthenticated()) {
       throw redirect({ to: DEFAULT_REDIRECTS.authenticated });
     }
+    throw redirect({ to: SL_ROUTES.login });
   },
 });
 

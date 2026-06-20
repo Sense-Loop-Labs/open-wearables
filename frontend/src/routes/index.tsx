@@ -2,15 +2,15 @@ import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { isAuthenticated } from '@/lib/auth/session';
 import { LoadingSpinner } from '@/components/common/loading-spinner';
 import { useEffect } from 'react';
-import { DEFAULT_REDIRECTS } from '@/lib/constants/routes';
+import { DEFAULT_REDIRECTS, SL_ROUTES } from '@/lib/constants/routes';
 
 export const Route = createFileRoute('/')({
   beforeLoad: async () => {
-    // Skip redirect during SSR - localStorage is not available on the server
+    // During SSR, always redirect to SL login (can't check auth without localStorage)
     if (typeof window === 'undefined') {
-      return;
+      throw redirect({ to: SL_ROUTES.login });
     }
-    // Redirect to dashboard if authenticated, otherwise to login
+    // Client-side: redirect based on auth status
     if (isAuthenticated()) {
       throw redirect({
         to: DEFAULT_REDIRECTS.authenticated,
@@ -27,7 +27,7 @@ export const Route = createFileRoute('/')({
 function IndexRedirect() {
   const navigate = useNavigate();
 
-  // Handle client-side redirect after hydration
+  // Handle client-side redirect after hydration (fallback)
   useEffect(() => {
     if (isAuthenticated()) {
       navigate({ to: DEFAULT_REDIRECTS.authenticated });
