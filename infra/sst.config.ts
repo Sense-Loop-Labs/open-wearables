@@ -50,7 +50,8 @@ export default $config({
     const stage = $app.stage;
     const isProduction = stage === "production";
     const isPrePilot = process.env.PRE_PILOT === "true" && !isProduction;
-    const deployFrontend = process.env.DEPLOY_FRONTEND === "true";
+    // Deploy frontend by default, opt-out with DEPLOY_FRONTEND=false
+    const deployFrontend = process.env.DEPLOY_FRONTEND !== "false";
 
     // Log deployment mode
     if (isPrePilot) {
@@ -324,7 +325,7 @@ export default $config({
       SL_ADMIN_PASSWORD: slAdminPassword.value,
       SL_APP_BASE_URL: isProduction
         ? "https://dashboard.wearables.senseloop.health"
-        : "https://dashboard.wearables.staging.senselooplabs.com",
+        : "https://dashboard.staging.senselooplabs.com",
 
       // Sentry (optional - set via secret if needed)
       SENTRY_ENABLED: isProduction ? "true" : "false",
@@ -357,13 +358,14 @@ export default $config({
         CORS_ORIGINS: JSON.stringify(
           isProduction
             ? ["https://app.senseloop.health", "https://dashboard.senseloop.health", "https://dashboard.wearables.senseloop.health"]
-            : ["https://app.staging.senselooplabs.com", "https://dashboard.wearables.staging.senselooplabs.com", "http://localhost:3000"]
+            : ["https://app.staging.senselooplabs.com", "https://dashboard.staging.senselooplabs.com", "http://localhost:3000"]
         ),
       },
       health: {
         command: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"],
-        interval: "30 seconds",
-        timeout: "5 seconds",
+        interval: "60 seconds",
+        timeout: "10 seconds",
+        retries: 5,
         startPeriod: "5 minutes",
       },
       scaling: isProduction
@@ -485,7 +487,7 @@ export default $config({
     // The frontend uses TanStack Start with Nitro SSR - deployed as ECS service
     const frontendDomain = isProduction
       ? "dashboard.wearables.senseloop.health"
-      : "dashboard.wearables.staging.senselooplabs.com";
+      : "dashboard.staging.senselooplabs.com";
 
     let frontendUrl: string | undefined;
 

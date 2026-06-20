@@ -37,6 +37,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "SlAdminPassword": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "SlFirebaseCredentials": {
       "type": "sst.sst.Secret"
       "value": string
