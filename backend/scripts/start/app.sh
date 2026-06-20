@@ -1,4 +1,5 @@
 #!/bin/bash
+# Build: 2026-06-19-fix-access-policy-seeding
 set -e -x
 
 # Ensure svix database exists (idempotent)
@@ -37,6 +38,10 @@ uv run python scripts/init/seed_sense_loop.py
 # Seed Sense Loop role definitions (required before admin)
 echo 'Seeding Sense Loop roles...'
 uv run python scripts/seed_sl_roles.py
+
+# Seed Sense Loop access policies (required after roles)
+echo 'Seeding Sense Loop access policies...'
+uv run python scripts/seed_sl_access_policies.py
 
 # Seed Sense Loop admin practitioner (for dashboard access)
 echo 'Seeding Sense Loop admin...'

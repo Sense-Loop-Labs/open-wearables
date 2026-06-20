@@ -103,6 +103,7 @@ class InviteResponse(BaseModel):
 
     success: bool
     invite_id: UUID | None = None
+    email: str | None = None
     message: str
 
 

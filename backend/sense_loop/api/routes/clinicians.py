@@ -290,6 +290,7 @@ async def invite_clinician(
     return InviteResponse(
         success=True,
         invite_id=invite.id,
+        email=invite.email,
         message="Invitation sent successfully",
     )
 
@@ -353,6 +354,7 @@ async def resend_invite(
     return InviteResponse(
         success=True,
         invite_id=invite.id,
+        email=invite.email,
         message="Invitation resent successfully",
     )
 

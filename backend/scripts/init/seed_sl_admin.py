@@ -74,6 +74,11 @@ def get_or_create_admin_practitioner(db, org: Organization) -> Practitioner:
     practitioner = db.execute(stmt).scalar_one_or_none()
 
     if practitioner:
+        # Update password hash if current password doesn't match SL_ADMIN_PASSWORD env var
+        current_password = sl_settings.admin_password.get_secret_value()
+        if not pbkdf2_sha256.verify(current_password, practitioner.password_hash):
+            practitioner.password_hash = pbkdf2_sha256.hash(current_password)
+            print(f"Updated password for practitioner '{practitioner.email}'")
         print(f"Practitioner '{practitioner.email}' already exists (id: {practitioner.id})")
         return practitioner
 
