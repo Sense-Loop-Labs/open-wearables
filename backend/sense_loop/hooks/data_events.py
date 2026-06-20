@@ -62,19 +62,28 @@ def on_timeseries_saved(
 
     # Map OW series types to SL vital types
     vital_type = _map_series_to_vital(series_type)
-    if not vital_type:
-        # Not a vital we track - skip
+
+    # Check if it's activity data
+    is_activity = _is_activity_series(series_type)
+
+    if not vital_type and not is_activity:
+        # Not a vital or activity we track - skip
         return
 
-    # Process each sample
-    for sample in samples:
-        _process_sample(db, patient, vital_type, sample, provider)
+    if vital_type:
+        # Process each sample for vitals
+        for sample in samples:
+            _process_sample(db, patient, vital_type, sample, provider)
 
-    # Update patient summary with latest values
-    _update_patient_summary(db, patient, vital_type, samples)
+        # Update patient summary with latest vital values
+        _update_patient_summary(db, patient, vital_type, samples)
 
-    # Trigger task auto-completion check (async via Celery)
-    _trigger_task_completion(patient.id, vital_type, samples)
+        # Trigger task auto-completion check (async via Celery)
+        _trigger_task_completion(patient.id, vital_type, samples)
+
+    if is_activity:
+        # Update patient activity summary
+        _update_activity_summary(db, patient, series_type, samples)
 
 
 def _map_series_to_vital(series_type: str) -> str | None:
@@ -95,6 +104,22 @@ def _map_series_to_vital(series_type: str) -> str | None:
         "blood_pressure_diastolic": "blood_pressure_diastolic",
     }
     return mapping.get(series_type)
+
+
+def _is_activity_series(series_type: str) -> bool:
+    """Check if series type is activity-related."""
+    activity_types = {
+        "steps",
+        "active_energy",
+        "active_energy_burned",  # HealthKit
+        "basal_energy_burned",   # HealthKit
+        "distance_walking_running",  # HealthKit
+        "distance",
+        "flights_climbed",
+        "exercise_time",         # HealthKit exercise minutes
+        "apple_exercise_time",   # Apple Watch exercise ring
+    }
+    return series_type in activity_types
 
 
 def _process_sample(
@@ -131,6 +156,95 @@ def _process_sample(
         observed_at=timestamp or datetime.utcnow(),
         provider=provider,
     )
+
+
+def _update_activity_summary(
+    db: Session,
+    patient: "Patient",
+    series_type: str,
+    samples: list[dict[str, Any]],
+) -> None:
+    """Update patient summary with activity data.
+
+    For steps data, we calculate active minutes using the OW repository method.
+    For other activity data (distance, calories), we update directly.
+    """
+    from datetime import date, timedelta
+
+    from app.repositories.data_point_series_repository import DataPointSeriesRepository
+    from sense_loop.services.summary_service import SummaryService
+
+    if not samples or not patient.ow_user_id:
+        return
+
+    service = SummaryService(db)
+
+    # For steps, calculate active minutes
+    if series_type == "steps":
+        # Calculate today's active minutes from step data
+        repo = DataPointSeriesRepository()
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+
+        try:
+            activity_data = repo.get_daily_active_minutes(
+                db,
+                patient.ow_user_id,
+                today,
+                tomorrow,
+                active_threshold=30,  # 30 steps/minute = active
+            )
+
+            if activity_data and today.isoformat() in activity_data:
+                day_data = activity_data[today.isoformat()]
+                active_minutes = day_data.get("active_minutes", 0)
+
+                # Also sum up steps from samples
+                total_steps = sum(s.get("value", 0) for s in samples if s.get("value"))
+
+                logger.info(
+                    "Updating activity for patient %s: %d steps, %d active minutes",
+                    patient.id,
+                    total_steps,
+                    active_minutes,
+                )
+
+                service.update_activity(
+                    patient_id=patient.id,
+                    steps=total_steps,
+                    active_minutes=active_minutes,
+                )
+        except Exception as e:
+            logger.warning("Failed to calculate active minutes: %s", str(e))
+
+    # For exercise time, update active minutes directly
+    elif series_type in ("exercise_time", "apple_exercise_time"):
+        # Sum exercise minutes from samples
+        total_minutes = sum(int(s.get("value", 0)) for s in samples if s.get("value"))
+        if total_minutes > 0:
+            service.update_activity(
+                patient_id=patient.id,
+                active_minutes=total_minutes,
+            )
+
+    # For distance data
+    elif series_type in ("distance", "distance_walking_running"):
+        # Get total distance in meters
+        total_distance = sum(float(s.get("value", 0)) for s in samples if s.get("value"))
+        if total_distance > 0:
+            service.update_activity(
+                patient_id=patient.id,
+                distance_meters=total_distance,
+            )
+
+    # For active calories
+    elif series_type in ("active_energy", "active_energy_burned"):
+        total_calories = sum(float(s.get("value", 0)) for s in samples if s.get("value"))
+        if total_calories > 0:
+            service.update_activity(
+                patient_id=patient.id,
+                active_calories=total_calories,
+            )
 
 
 def _update_patient_summary(
