@@ -36,15 +36,14 @@ def _get_latest_sleep_minutes(db: Session, ow_user_id: UUID | None) -> int | Non
     try:
         from app.models import DataSource
         from app.models.event_record import EventRecord
-        from app.models.event_record_detail import EventRecordDetail
         from app.models.sleep_details import SleepDetails
 
         # Query latest sleep record for this user
+        # Use outerjoin to match mobile.py query - SleepDetails joins directly to EventRecord
         stmt = (
             select(EventRecord, SleepDetails)
             .join(DataSource, EventRecord.data_source_id == DataSource.id)
-            .join(EventRecordDetail, EventRecordDetail.record_id == EventRecord.id)
-            .join(SleepDetails, SleepDetails.record_id == EventRecordDetail.record_id)
+            .outerjoin(SleepDetails, EventRecord.id == SleepDetails.record_id)
             .where(
                 DataSource.user_id == ow_user_id,
                 EventRecord.category == "sleep",
