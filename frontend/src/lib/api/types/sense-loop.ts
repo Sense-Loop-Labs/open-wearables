@@ -1091,3 +1091,34 @@ export interface PatientQuestionnaireCopyList {
   items: PatientQuestionnaireDetail[];
   total: number;
 }
+
+// ============================================================================
+// Settings
+// ============================================================================
+
+export interface NotificationSettings {
+  enabled: boolean;
+  patient_reminder_channel: 'email' | 'sms' | 'push';
+  care_team_alert_channel: 'email' | 'sms' | 'push' | 'all';
+  quiet_hours_enabled: boolean;
+  quiet_hours_start?: string | null;
+  quiet_hours_end?: string | null;
+}
+
+export interface AlertSettings {
+  auto_escalate: boolean;
+  escalation_delay_minutes: number;
+}
+
+export interface SystemSettings {
+  id: string;
+  organization_id: string | null;
+  notifications: NotificationSettings;
+  alerts: AlertSettings;
+  updated_at: string;
+}
+
+export interface SettingsUpdate {
+  notifications?: Partial<NotificationSettings>;
+  alerts?: Partial<AlertSettings>;
+}

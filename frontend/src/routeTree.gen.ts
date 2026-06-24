@@ -27,6 +27,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWebhooksIndexRouteImport } from './routes/_authenticated/webhooks/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as UsersUserIdPairRouteImport } from './routes/users/$userId/pair'
+import { Route as SlSlAuthenticatedSettingsRouteImport } from './routes/sl/_sl-authenticated/settings'
 import { Route as SlSlAuthenticatedDashboardRouteImport } from './routes/sl/_sl-authenticated/dashboard'
 import { Route as AuthenticatedWebhooksEndpointIdRouteImport } from './routes/_authenticated/webhooks/$endpointId'
 import { Route as AuthenticatedUsersUserIdRouteImport } from './routes/_authenticated/users/$userId'
@@ -137,6 +138,12 @@ const UsersUserIdPairRoute = UsersUserIdPairRouteImport.update({
   path: '/users/$userId/pair',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SlSlAuthenticatedSettingsRoute =
+  SlSlAuthenticatedSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => SlSlAuthenticatedRoute,
+  } as any)
 const SlSlAuthenticatedDashboardRoute =
   SlSlAuthenticatedDashboardRouteImport.update({
     id: '/dashboard',
@@ -271,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/webhooks/$endpointId': typeof AuthenticatedWebhooksEndpointIdRoute
   '/sl/dashboard': typeof SlSlAuthenticatedDashboardRoute
+  '/sl/settings': typeof SlSlAuthenticatedSettingsRoute
   '/users/$userId/pair': typeof UsersUserIdPairRouteWithChildren
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/webhooks/': typeof AuthenticatedWebhooksIndexRoute
@@ -307,6 +315,7 @@ export interface FileRoutesByTo {
   '/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/webhooks/$endpointId': typeof AuthenticatedWebhooksEndpointIdRoute
   '/sl/dashboard': typeof SlSlAuthenticatedDashboardRoute
+  '/sl/settings': typeof SlSlAuthenticatedSettingsRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/webhooks': typeof AuthenticatedWebhooksIndexRoute
   '/sl/alerts/$alertId': typeof SlSlAuthenticatedAlertsAlertIdRoute
@@ -345,6 +354,7 @@ export interface FileRoutesById {
   '/_authenticated/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/_authenticated/webhooks/$endpointId': typeof AuthenticatedWebhooksEndpointIdRoute
   '/sl/_sl-authenticated/dashboard': typeof SlSlAuthenticatedDashboardRoute
+  '/sl/_sl-authenticated/settings': typeof SlSlAuthenticatedSettingsRoute
   '/users/$userId/pair': typeof UsersUserIdPairRouteWithChildren
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/webhooks/': typeof AuthenticatedWebhooksIndexRoute
@@ -385,6 +395,7 @@ export interface FileRouteTypes {
     | '/users/$userId'
     | '/webhooks/$endpointId'
     | '/sl/dashboard'
+    | '/sl/settings'
     | '/users/$userId/pair'
     | '/users/'
     | '/webhooks/'
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/users/$userId'
     | '/webhooks/$endpointId'
     | '/sl/dashboard'
+    | '/sl/settings'
     | '/users'
     | '/webhooks'
     | '/sl/alerts/$alertId'
@@ -458,6 +470,7 @@ export interface FileRouteTypes {
     | '/_authenticated/users/$userId'
     | '/_authenticated/webhooks/$endpointId'
     | '/sl/_sl-authenticated/dashboard'
+    | '/sl/_sl-authenticated/settings'
     | '/users/$userId/pair'
     | '/_authenticated/users/'
     | '/_authenticated/webhooks/'
@@ -622,6 +635,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/users/$userId/pair'
       preLoaderRoute: typeof UsersUserIdPairRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/sl/_sl-authenticated/settings': {
+      id: '/sl/_sl-authenticated/settings'
+      path: '/settings'
+      fullPath: '/sl/settings'
+      preLoaderRoute: typeof SlSlAuthenticatedSettingsRouteImport
+      parentRoute: typeof SlSlAuthenticatedRoute
     }
     '/sl/_sl-authenticated/dashboard': {
       id: '/sl/_sl-authenticated/dashboard'
@@ -828,6 +848,7 @@ const SlSlAuthenticatedPatientsPatientIdRouteWithChildren =
 
 interface SlSlAuthenticatedRouteChildren {
   SlSlAuthenticatedDashboardRoute: typeof SlSlAuthenticatedDashboardRoute
+  SlSlAuthenticatedSettingsRoute: typeof SlSlAuthenticatedSettingsRoute
   SlSlAuthenticatedAlertsAlertIdRoute: typeof SlSlAuthenticatedAlertsAlertIdRoute
   SlSlAuthenticatedCliniciansClinicianIdRoute: typeof SlSlAuthenticatedCliniciansClinicianIdRoute
   SlSlAuthenticatedInstructionTemplatesTemplateIdRoute: typeof SlSlAuthenticatedInstructionTemplatesTemplateIdRoute
@@ -841,6 +862,7 @@ interface SlSlAuthenticatedRouteChildren {
 
 const SlSlAuthenticatedRouteChildren: SlSlAuthenticatedRouteChildren = {
   SlSlAuthenticatedDashboardRoute: SlSlAuthenticatedDashboardRoute,
+  SlSlAuthenticatedSettingsRoute: SlSlAuthenticatedSettingsRoute,
   SlSlAuthenticatedAlertsAlertIdRoute: SlSlAuthenticatedAlertsAlertIdRoute,
   SlSlAuthenticatedCliniciansClinicianIdRoute:
     SlSlAuthenticatedCliniciansClinicianIdRoute,

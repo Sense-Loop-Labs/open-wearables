@@ -12,7 +12,7 @@ from sense_loop.models import SystemConfig
 DEFAULTS = {
     "notifications": {
         "enabled": True,
-        "patient_reminder_channel": "email",
+        "patient_reminder_channel": "push",
         "care_team_alert_channel": "email",
         "quiet_hours_enabled": False,
     },
@@ -25,6 +25,9 @@ DEFAULTS = {
 
 class ConfigService:
     """Service for managing system configuration."""
+
+    # Expose defaults for API responses
+    DEFAULTS = DEFAULTS
 
     def __init__(self, db: Session):
         self.db = db
@@ -123,7 +126,7 @@ class ConfigService:
         return self.get(
             "notifications.patient_reminder_channel",
             organization_id,
-            default="email",
+            default="push",
         )
 
     def get_care_team_alert_channel(

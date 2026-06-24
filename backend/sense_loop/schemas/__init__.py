@@ -83,6 +83,12 @@ from .questionnaire import (
     PatientQuestionnaireResponse,
     PatientQuestionnaireListResponse,
 )
+from .settings import (
+    NotificationSettings,
+    AlertSettings,
+    SettingsUpdate,
+    SettingsResponse,
+)
 
 __all__ = [
     # Patient
@@ -160,4 +166,9 @@ __all__ = [
     "QuestionnaireAssignRequest",
     "PatientQuestionnaireResponse",
     "PatientQuestionnaireListResponse",
+    # Settings
+    "NotificationSettings",
+    "AlertSettings",
+    "SettingsUpdate",
+    "SettingsResponse",
 ]

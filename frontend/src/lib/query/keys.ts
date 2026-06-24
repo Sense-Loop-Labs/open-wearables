@@ -307,5 +307,11 @@ export const queryKeys = {
       detail: (id: string) =>
         [...queryKeys.sl.questionnaires.details(), id] as const,
     },
+
+    // Settings
+    settings: {
+      all: ['sl', 'settings'] as const,
+      current: (orgId?: string) => [...queryKeys.sl.settings.all, orgId] as const,
+    },
   },
 } as const;

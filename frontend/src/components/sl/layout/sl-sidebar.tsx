@@ -4,6 +4,7 @@
  */
 
 import { Link, useRouterState } from '@tanstack/react-router';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -13,10 +14,12 @@ import {
   Building2,
   PanelLeft,
   Activity,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getSlCurrentOrgId,
+  getSlCurrentPractitioner,
   getSlOrganizations,
   setSlCurrentOrg,
 } from '@/lib/auth/sl-session';
@@ -54,6 +57,12 @@ const navItems = [
     path: '/sl/clinicians',
     icon: Stethoscope,
   },
+  {
+    label: 'Settings',
+    path: '/sl/settings',
+    icon: Settings,
+    requiresAdmin: true,
+  },
 ];
 
 export function SlSidebar({ collapsed = false, alertCount = 0, onToggleCollapse }: SlSidebarProps) {
@@ -64,6 +73,18 @@ export function SlSidebar({ collapsed = false, alertCount = 0, onToggleCollapse 
   const currentOrgId = getSlCurrentOrgId();
   const currentOrg = organizations.find((o) => o.id === currentOrgId);
   const hasMultipleOrgs = organizations.length > 1;
+
+  // Check if user has admin role (client-side only to avoid hydration mismatch)
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    const practitioner = getSlCurrentPractitioner();
+    const hasAdminRole = practitioner?.currentOrg?.role === 'org_admin' ||
+                         practitioner?.currentOrg?.role === 'super_admin';
+    setIsAdmin(hasAdminRole);
+  }, []);
+
+  // Filter nav items based on permissions
+  const visibleNavItems = navItems.filter((item) => !item.requiresAdmin || isAdmin);
 
   const handleOrgChange = (orgId: string) => {
     setSlCurrentOrg(orgId);
@@ -142,7 +163,7 @@ export function SlSidebar({ collapsed = false, alertCount = 0, onToggleCollapse 
 
       {/* Navigation */}
       <nav className="flex-1 p-2 space-y-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive =
             currentPath === item.path ||
             (item.path !== '/sl/dashboard' && currentPath.startsWith(item.path));

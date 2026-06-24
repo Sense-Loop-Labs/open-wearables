@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from .routes import auth, mobile, patients, alerts, clinicians, organizations, dashboard, value_sets, clinical_actions, break_glass, instruction_templates, questionnaires, health
+from .routes import auth, mobile, patients, alerts, clinicians, organizations, dashboard, value_sets, clinical_actions, break_glass, instruction_templates, questionnaires, health, settings
 
 sl_router = APIRouter(prefix="/sl", tags=["Sense Loop"])
 
@@ -23,6 +23,9 @@ sl_router.include_router(clinical_actions.router, prefix="/patients", tags=["SL:
 sl_router.include_router(break_glass.router, prefix="/break-glass", tags=["SL: Break-the-Glass"])
 sl_router.include_router(instruction_templates.router, prefix="/instruction-templates", tags=["SL: Instruction Templates"])
 sl_router.include_router(questionnaires.router, prefix="/questionnaires", tags=["SL: Questionnaires"])
+
+# Settings endpoints (admin only)
+sl_router.include_router(settings.router, prefix="/settings", tags=["SL: Settings"])
 
 # Health check endpoints (no auth required for monitoring)
 sl_router.include_router(health.router, prefix="/health", tags=["SL: Health"])

@@ -890,6 +890,33 @@ export const slQuestionnairesService = {
   },
 };
 
+// ============================================================================
+// Settings
+// ============================================================================
+
+export const slSettingsService = {
+  async get(organizationId?: string): Promise<import('../types/sense-loop').SystemSettings> {
+    const params: Record<string, string> = {};
+    if (organizationId) {
+      params.organization_id = organizationId;
+    }
+    return slApiClient.request(`${SL_BASE}/settings`, {
+      method: 'GET',
+      params,
+    });
+  },
+
+  async update(
+    data: import('../types/sense-loop').SettingsUpdate,
+    organizationId?: string
+  ): Promise<import('../types/sense-loop').SystemSettings> {
+    const url = organizationId
+      ? `${SL_BASE}/settings?organization_id=${organizationId}`
+      : `${SL_BASE}/settings`;
+    return slApiClient.patch<import('../types/sense-loop').SystemSettings>(url, data);
+  },
+};
+
 // Combined export for convenience
 export const slService = {
   auth: slAuthService,
@@ -904,4 +931,5 @@ export const slService = {
   instructionTemplates: slInstructionTemplatesService,
   patientPlans: slPatientPlansService,
   questionnaires: slQuestionnairesService,
+  settings: slSettingsService,
 };

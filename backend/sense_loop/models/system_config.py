@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import BaseDbModel
 from app.mappings import PrimaryKey
@@ -92,6 +93,8 @@ class SystemConfig(BaseDbModel):
         # Set the value
         current[keys[-1]] = value
         self.settings = settings
+        # Flag the JSONB column as modified so SQLAlchemy detects the change
+        flag_modified(self, "settings")
 
     def __repr__(self) -> str:
         org = f"org={self.organization_id}" if self.organization_id else "global"
