@@ -2075,6 +2075,7 @@ function formatDateTime(dateString: string): string {
   const time = date.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 
   if (date.toDateString() === now.toDateString()) {

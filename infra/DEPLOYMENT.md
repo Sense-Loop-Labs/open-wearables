@@ -205,6 +205,8 @@ npx sst secret set SlSendgridApiKey "SG.your-sendgrid-key" --stage staging
 npx sst secret list --stage staging
 ```
 
+**Note:** The deployment commands automatically check for required secrets before deploying. If any are missing, you'll see instructions on how to set them.
+
 ---
 
 ## Deployment Commands

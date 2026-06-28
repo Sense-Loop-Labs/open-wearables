@@ -171,6 +171,7 @@ def _update_activity_summary(
     """
     from datetime import date, timedelta
 
+    from app.models.data_point_series import DataPointSeries
     from app.repositories.data_point_series_repository import DataPointSeriesRepository
     from sense_loop.services.summary_service import SummaryService
 
@@ -182,7 +183,7 @@ def _update_activity_summary(
     # For steps, calculate active minutes
     if series_type == "steps":
         # Calculate today's active minutes from step data
-        repo = DataPointSeriesRepository()
+        repo = DataPointSeriesRepository(DataPointSeries)
         today = date.today()
         tomorrow = today + timedelta(days=1)
 
