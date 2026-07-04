@@ -220,9 +220,15 @@ class AuditIntegrityService:
                 )
 
             # Compute expected hash
+            entry_created_at = entry.created_at
+            if entry_created_at.tzinfo is None:
+                # Add UTC timezone if missing for consistent hash computation
+                from datetime import timezone
+                entry_created_at = entry_created_at.replace(tzinfo=timezone.utc)
+
             computed_hash = compute_entry_hash(
                 entry_id=entry.id,
-                created_at=entry.created_at,
+                created_at=entry_created_at,
                 actor_type=entry.actor_type,
                 actor_id=entry.actor_id,
                 action=entry.action,
@@ -331,10 +337,16 @@ class AuditIntegrityService:
         for entry in entries:
             last_seq += 1
 
-            # Compute hash
+            # Compute hash using the entry's actual created_at timestamp
+            entry_created_at = entry.created_at
+            if entry_created_at.tzinfo is None:
+                # Add UTC timezone if missing
+                from datetime import timezone
+                entry_created_at = entry_created_at.replace(tzinfo=timezone.utc)
+
             entry_hash = compute_entry_hash(
                 entry_id=entry.id,
-                created_at=entry.created_at,
+                created_at=entry_created_at,
                 actor_type=entry.actor_type,
                 actor_id=entry.actor_id,
                 action=entry.action,

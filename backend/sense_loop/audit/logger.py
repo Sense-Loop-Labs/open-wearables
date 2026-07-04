@@ -53,6 +53,8 @@ class AuditLogger:
         Returns:
             The created AuditLog entry
         """
+        from datetime import datetime, timezone
+
         ctx = self.context
 
         # Get hash chain info for integrity verification
@@ -67,6 +69,10 @@ class AuditLogger:
 
         entry_id = uuid4()
         org_id = organization_id or ctx.organization_id
+
+        # Set created_at explicitly so we can use the same value for hash computation
+        # This ensures verification will match
+        entry_created_at = datetime.now(timezone.utc)
 
         audit_entry = AuditLog(
             id=entry_id,
@@ -97,16 +103,16 @@ class AuditLogger:
             # INTEGRITY
             sequence_number=sequence_number,
             previous_hash=previous_hash,
+            # Set created_at explicitly for hash consistency
+            created_at=entry_created_at,
         )
 
-        # Compute entry hash after setting all fields
+        # Compute entry hash using the same timestamp we set on the entry
         if previous_hash is not None:
             try:
-                from datetime import datetime, timezone
-
                 audit_entry.entry_hash = compute_entry_hash(
                     entry_id=entry_id,
-                    created_at=datetime.now(timezone.utc),
+                    created_at=entry_created_at,
                     actor_type=ctx.actor_type or "unknown",
                     actor_id=ctx.actor_id,
                     action=action,
