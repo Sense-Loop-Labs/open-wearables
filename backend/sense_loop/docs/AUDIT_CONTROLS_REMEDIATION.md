@@ -268,9 +268,9 @@ audit.log(
   - [x] Add database trigger to prevent UPDATE/DELETE on audit log
   - [x] Add scheduled daily verification task (Celery Beat at 05:00 UTC)
 
-- [ ] **Add audit log access auditing**
-  - [ ] Log when audit logs are queried
-  - [ ] Track who accessed audit reports
+- [x] **Add audit log access auditing** ✅ Completed July 4, 2026
+  - [x] Log when audit logs are queried (logged in compliance endpoints)
+  - [x] Track who accessed audit reports (all report endpoints log view action)
 
 - [x] **Create compliance reporting** ✅ Completed July 4, 2026
   - [x] PHI access report by user (`/reports/phi-access`)
