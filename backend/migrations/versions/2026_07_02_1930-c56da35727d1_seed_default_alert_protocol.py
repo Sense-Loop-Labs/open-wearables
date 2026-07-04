@@ -96,7 +96,7 @@ def upgrade() -> None:
                 organization_id, status, created_at, published_at
             )
             VALUES (
-                :id, :name, :code, :version, :description,
+                CAST(:id AS uuid), :name, :code, :version, :description,
                 NULL, 'published', now(), now()
             )
             ON CONFLICT (id) DO NOTHING
@@ -121,7 +121,7 @@ def upgrade() -> None:
                     notify_patient, notify_care_team, created_at
                 )
                 VALUES (
-                    :id, :protocol_id, :code, :name, :vital_type,
+                    CAST(:id AS uuid), CAST(:protocol_id AS uuid), :code, :name, :vital_type,
                     :high_warning, :high_critical, :low_warning, :low_critical,
                     :priority, true, 'critical', 60,
                     false, true, now()
@@ -149,7 +149,7 @@ def upgrade() -> None:
                 risk_level, description, created_at
             )
             VALUES (
-                :id, :protocol_id, :name, :start_day, :end_day,
+                CAST(:id AS uuid), CAST(:protocol_id AS uuid), :name, :start_day, :end_day,
                 :risk_level, :description, now()
             )
             ON CONFLICT (id) DO NOTHING
@@ -168,7 +168,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Delete risk window
     op.execute(
-        sa.text("DELETE FROM sl_alert_risk_window WHERE id = :id").bindparams(
+        sa.text("DELETE FROM sl_alert_risk_window WHERE id = CAST(:id AS uuid)").bindparams(
             id=RISK_WINDOW_ID
         )
     )
@@ -176,14 +176,14 @@ def downgrade() -> None:
     # Delete alert rules
     for rule in ALERT_RULES:
         op.execute(
-            sa.text("DELETE FROM sl_alert_protocol_rule WHERE id = :id").bindparams(
+            sa.text("DELETE FROM sl_alert_protocol_rule WHERE id = CAST(:id AS uuid)").bindparams(
                 id=rule["id"]
             )
         )
 
     # Delete protocol
     op.execute(
-        sa.text("DELETE FROM sl_alert_protocol WHERE id = :id").bindparams(
+        sa.text("DELETE FROM sl_alert_protocol WHERE id = CAST(:id AS uuid)").bindparams(
             id=PROTOCOL_ID
         )
     )

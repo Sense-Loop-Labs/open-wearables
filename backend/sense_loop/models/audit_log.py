@@ -76,6 +76,14 @@ class AuditLog(BaseDbModel):
     changes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # {"field": {"old": "...", "new": "..."}}
 
+    # Hash chain for integrity verification (HIPAA tamper-evidence)
+    entry_hash: Mapped[str_255 | None] = mapped_column(nullable=True, index=True)
+    # SHA-256 hash of this entry's key fields + previous_hash
+    previous_hash: Mapped[str_255 | None] = mapped_column(nullable=True)
+    # Hash of the previous entry in the chain (NULL for first entry)
+    sequence_number: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    # Sequential counter for ordering and gap detection
+
     # Note: This table should NEVER have UPDATE or DELETE operations
     # All entries are immutable for compliance
 

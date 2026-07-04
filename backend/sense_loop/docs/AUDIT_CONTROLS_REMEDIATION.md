@@ -260,10 +260,11 @@ audit.log(
 
 ### Phase 3: Medium Priority (Within 90 Days)
 
-- [ ] **Implement log integrity verification**
-  - [ ] Add hash chain to audit log entries
-  - [ ] Create verification endpoint
-  - [ ] Add integrity check to compliance reports
+- [x] **Implement log integrity verification** ✅ Completed July 4, 2026
+  - [x] Add hash chain to audit log entries (entry_hash, previous_hash, sequence_number)
+  - [x] Create verification endpoint (/sl/compliance/audit/integrity)
+  - [x] Add backfill endpoint for existing entries (/sl/compliance/audit/backfill-hashes)
+  - [x] Add chain summary endpoint (/sl/compliance/audit/summary)
 
 - [ ] **Add audit log access auditing**
   - [ ] Log when audit logs are queried

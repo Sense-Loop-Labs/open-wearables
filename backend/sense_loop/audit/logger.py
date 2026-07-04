@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sense_loop.models.audit_log import AuditAction, AuditLog
 
 from .context import AuditContext, get_audit_context
+from .integrity import compute_entry_hash, get_latest_hash_info, get_next_sequence_number
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,27 @@ class AuditLogger:
         """
         ctx = self.context
 
+        # Get hash chain info for integrity verification
+        try:
+            previous_hash, _ = get_latest_hash_info(self.db)
+            sequence_number = get_next_sequence_number(self.db)
+        except Exception as e:
+            # Don't fail audit logging if hash chain has issues
+            logger.warning(f"Could not get hash chain info: {e}")
+            previous_hash = None
+            sequence_number = None
+
+        entry_id = uuid4()
+        org_id = organization_id or ctx.organization_id
+
         audit_entry = AuditLog(
-            id=uuid4(),
+            id=entry_id,
             # WHO
             actor_type=ctx.actor_type or "unknown",
             actor_id=ctx.actor_id,
             actor_name=ctx.actor_name,
             actor_email=ctx.actor_email,
-            organization_id=organization_id or ctx.organization_id,
+            organization_id=org_id,
             # WHAT
             action=action,
             resource_type=resource_type,
@@ -80,7 +94,29 @@ class AuditLogger:
             details=details,
             phi_fields_accessed=phi_fields_accessed,
             changes=changes,
+            # INTEGRITY
+            sequence_number=sequence_number,
+            previous_hash=previous_hash,
         )
+
+        # Compute entry hash after setting all fields
+        if previous_hash is not None:
+            try:
+                from datetime import datetime, timezone
+
+                audit_entry.entry_hash = compute_entry_hash(
+                    entry_id=entry_id,
+                    created_at=datetime.now(timezone.utc),
+                    actor_type=ctx.actor_type or "unknown",
+                    actor_id=ctx.actor_id,
+                    action=action,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    outcome=outcome,
+                    previous_hash=previous_hash,
+                )
+            except Exception as e:
+                logger.warning(f"Could not compute entry hash: {e}")
 
         self.db.add(audit_entry)
 
