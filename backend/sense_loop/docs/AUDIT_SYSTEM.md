@@ -302,7 +302,7 @@ Requires `super_admin` role.
 
 ### 5.2 Compliance Reports
 
-All require `super_admin` or `org_admin` role.
+All require `super_admin` or `org_admin` role. Each report logs its own access to the audit trail.
 
 **GET /api/v1/sl/compliance/reports/phi-access**
 
@@ -312,22 +312,47 @@ Query parameters:
 - `days` - Number of days to include (default: 30, max: 365)
 - `organization_id` - Filter by organization (optional)
 
+```bash
+curl "http://localhost:8000/api/v1/sl/compliance/reports/phi-access?days=30" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Sample output:
 ```json
 {
-    "report_start": "2026-06-04T00:00:00Z",
-    "report_end": "2026-07-04T00:00:00Z",
-    "total_accesses": 1523,
-    "unique_actors": 12,
+    "report_start": "2026-06-04T21:26:45.896657Z",
+    "report_end": "2026-07-04T21:26:45.896657Z",
+    "total_accesses": 24,
+    "unique_actors": 3,
     "users": [
         {
-            "actor_id": "uuid",
-            "actor_name": "Dr. Smith",
-            "actor_email": "smith@hospital.com",
+            "actor_id": "4118c56a-b487-42c0-8386-e8af8b457c59",
+            "actor_name": "Test Admin",
+            "actor_email": "admin@test.com",
             "actor_type": "practitioner",
-            "total_accesses": 342,
-            "unique_resources": 45,
-            "phi_fields": ["heart_rate", "blood_pressure", "first_name"],
-            "last_access_at": "2026-07-04T14:30:00Z"
+            "total_accesses": 22,
+            "unique_resources": 1,
+            "phi_fields": [
+                "blood_pressure", "calories", "date_of_birth", "duration",
+                "email", "first_name", "heart_rate", "hrv", "last_name",
+                "observed_value", "patient_name", "phone", "respiratory_rate",
+                "sleep_duration", "sleep_efficiency", "sleep_stages", "spo2",
+                "steps", "temperature", "vital_type", "workout_type"
+            ],
+            "last_access_at": "2026-07-04T21:02:44.800471Z"
+        },
+        {
+            "actor_id": "54e1998a-0998-47a0-9a92-82dcbb4a56d7",
+            "actor_name": "Jane Doe",
+            "actor_email": "jane.doe@email.com",
+            "actor_type": "patient",
+            "total_accesses": 1,
+            "unique_resources": 1,
+            "phi_fields": [
+                "activity", "activity_restrictions", "heart_rate", "medications",
+                "questionnaires", "sleep", "temperature", "vitals", "warning_signs"
+            ],
+            "last_access_at": "2026-07-04T20:14:49.193267Z"
         }
     ]
 }
@@ -335,33 +360,54 @@ Query parameters:
 
 **GET /api/v1/sl/compliance/reports/failed-access**
 
-Failed/denied access attempts. Useful for detecting unauthorized access patterns.
+Failed/denied access attempts. Useful for detecting unauthorized access patterns or brute force attacks.
 
 Query parameters:
 - `days` - Number of days to include (default: 30)
 - `organization_id` - Filter by organization (optional)
 - `limit` - Max entries to return (default: 100, max: 1000)
 
+```bash
+curl "http://localhost:8000/api/v1/sl/compliance/reports/failed-access?days=30" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Sample output:
 ```json
 {
-    "report_start": "2026-06-04T00:00:00Z",
-    "report_end": "2026-07-04T00:00:00Z",
-    "total_failures": 23,
+    "report_start": "2026-06-04T21:27:12.369664Z",
+    "report_end": "2026-07-04T21:27:12.369664Z",
+    "total_failures": 25,
     "by_reason": {
-        "User not authorized for this organization": 15,
-        "Patient not found": 5,
-        "Invalid credentials": 3
+        "Invalid email or password": 24,
+        "Identity verification failed": 1
     },
     "entries": [
         {
-            "id": "uuid",
-            "timestamp": "2026-07-04T10:15:00Z",
-            "actor_type": "practitioner",
-            "actor_name": "Unknown User",
-            "action": "read",
+            "id": "c73a1af4-0ba8-4f77-b07b-ff38afeac7f7",
+            "timestamp": "2026-06-29T22:02:21.802480Z",
+            "actor_type": "unknown",
+            "actor_name": null,
+            "actor_email": "dmin@senseloop.health",
+            "action": "login_failed",
+            "resource_type": "practitioner",
+            "resource_id": null,
+            "outcome_reason": "Invalid email or password",
+            "ip_address": null,
+            "endpoint": null
+        },
+        {
+            "id": "7b5575d8-a017-4b5b-b04a-a979ce846f3d",
+            "timestamp": "2026-06-13T20:30:03.343181Z",
+            "actor_type": "unknown",
+            "actor_name": null,
+            "actor_email": null,
+            "action": "activation_failed",
             "resource_type": "patient",
-            "outcome_reason": "User not authorized",
-            "ip_address": "192.168.1.100"
+            "resource_id": "a2d90eef-e3d5-41b3-83ad-59af56db7b9f",
+            "outcome_reason": "Identity verification failed",
+            "ip_address": null,
+            "endpoint": null
         }
     ]
 }
@@ -376,22 +422,29 @@ Query parameters:
 - `organization_id` - Filter by organization (optional)
 - `limit` - Max entries to return (default: 100, max: 1000)
 
+```bash
+curl "http://localhost:8000/api/v1/sl/compliance/reports/exports?days=30" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Sample output (when exports exist):
 ```json
 {
-    "report_start": "2026-06-04T00:00:00Z",
-    "report_end": "2026-07-04T00:00:00Z",
-    "total_exports": 8,
+    "report_start": "2026-06-04T21:27:27.247962Z",
+    "report_end": "2026-07-04T21:27:27.247962Z",
+    "total_exports": 2,
     "by_resource_type": {
-        "patient_vitals": 5,
-        "patient_summary": 3
+        "patient_vitals": 1,
+        "patient_summary": 1
     },
     "entries": [
         {
-            "id": "uuid",
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "timestamp": "2026-07-03T16:00:00Z",
             "actor_name": "Dr. Smith",
+            "actor_email": "smith@hospital.com",
             "resource_type": "patient_vitals",
-            "resource_id": "uuid",
+            "resource_id": "patient-uuid-here",
             "resource_name": "John Doe",
             "details": {"format": "csv", "date_range": "30d"},
             "outcome": "success"
@@ -400,31 +453,61 @@ Query parameters:
 }
 ```
 
+Sample output (no exports):
+```json
+{
+    "report_start": "2026-06-04T21:27:27.247962Z",
+    "report_end": "2026-07-04T21:27:27.247962Z",
+    "total_exports": 0,
+    "by_resource_type": {},
+    "entries": []
+}
+```
+
 **GET /api/v1/sl/compliance/reports/emergency-access**
 
 Emergency/break-glass access events. These bypass normal authorization and require justification.
+Should be rare - investigate any entries.
 
 Query parameters:
 - `days` - Number of days to include (default: 90)
 - `organization_id` - Filter by organization (optional)
 
+```bash
+curl "http://localhost:8000/api/v1/sl/compliance/reports/emergency-access?days=90" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Sample output (when emergency access has occurred):
 ```json
 {
-    "report_start": "2026-04-04T00:00:00Z",
-    "report_end": "2026-07-04T00:00:00Z",
-    "total_emergency_accesses": 2,
+    "report_start": "2026-04-05T21:27:36.912019Z",
+    "report_end": "2026-07-04T21:27:36.912019Z",
+    "total_emergency_accesses": 1,
     "entries": [
         {
-            "id": "uuid",
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "timestamp": "2026-06-15T03:30:00Z",
             "actor_name": "Dr. Emergency",
+            "actor_email": "emergency@hospital.com",
             "action": "emergency_access",
             "resource_type": "patient",
+            "resource_id": "patient-uuid-here",
             "resource_name": "Jane Doe",
             "reason": "Patient unresponsive, needed history",
             "details": {"justification": "Emergency room admission"}
         }
     ]
+}
+```
+
+Sample output (no emergency accesses - expected normal state):
+```json
+{
+    "report_start": "2026-04-05T21:27:36.912019Z",
+    "report_end": "2026-07-04T21:27:36.912019Z",
+    "total_emergency_accesses": 0,
+    "entries": []
 }
 ```
 
