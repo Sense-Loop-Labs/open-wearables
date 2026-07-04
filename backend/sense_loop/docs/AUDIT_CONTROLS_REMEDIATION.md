@@ -233,11 +233,11 @@ audit.log(
   - [x] Add logging to `/recent-alerts` with alert IDs
   - [x] Add logging to `/alerts-by-day` endpoint
 
-- [ ] **Fix log retention** (Deferred - cost considerations)
-  - [ ] Update `infra/sst.config.ts` retention to 6 years
-  - [ ] Create S3 bucket for log archival
-  - [ ] Set up CloudWatch to S3 streaming
-  - [ ] Enable S3 Object Lock
+- [~] **Fix log retention** (Deferred - cost considerations)
+  - [~] Update `infra/sst.config.ts` retention to 6 years
+  - [~] Create S3 bucket for log archival
+  - [~] Set up CloudWatch to S3 streaming
+  - [~] Enable S3 Object Lock
 
 ### Phase 2: High Priority (Within 30 Days)
 
@@ -252,11 +252,11 @@ audit.log(
   - [x] Log password reset success/failure
   - [x] Log session refresh/renewal (SDK/patient tokens)
   - [x] Log session revocation
-  - [ ] Log session timeout (requires background job)
+  - [~] Log session timeout (Deferred - requires background job)
 
 - [x] **Add authorization denial logging** ✅ Completed July 4, 2026
   - [x] Create middleware for 403 responses
-  - [ ] Log Cedar policy denials (logged at route level)
+  - [~] Log Cedar policy denials (Deferred - covered by 403 middleware)
 
 ### Phase 3: Medium Priority (Within 90 Days)
 
