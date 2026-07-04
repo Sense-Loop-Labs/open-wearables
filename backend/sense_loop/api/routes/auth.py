@@ -308,6 +308,15 @@ async def practitioner_logout(db: DbSession):
     """Logout (invalidate session)."""
     # For stateless JWT, just acknowledge the logout
     # In a production system, you might add the token to a blacklist
+
+    # Log logout
+    audit = AuditLogger(db)
+    audit.log(
+        action="logout",
+        resource_type="session",
+    )
+    db.commit()
+
     return {"success": True, "message": "Logged out successfully"}
 
 
@@ -348,11 +357,28 @@ async def reset_password(
     )
 
     if not success:
+        # Log failed password reset
+        audit = AuditLogger(db)
+        audit.log(
+            action="password_reset",
+            resource_type="practitioner",
+            outcome="failure",
+            outcome_reason=error,
+        )
+        db.commit()
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error or "Failed to reset password",
         )
 
+    # Log successful password reset
+    audit = AuditLogger(db)
+    audit.log(
+        action="password_reset",
+        resource_type="practitioner",
+        outcome="success",
+    )
     db.commit()
 
     return ResetPasswordResponse(

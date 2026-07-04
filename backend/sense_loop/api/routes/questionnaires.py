@@ -101,6 +101,23 @@ async def list_questionnaires(
     result = db.execute(stmt)
     questionnaires = result.unique().scalars().all()
 
+    # Log access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    if organization_id:
+        ctx.organization_id = organization_id
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="questionnaire_templates",
+        details={
+            "count": len(questionnaires),
+            "organization_id": str(organization_id) if organization_id else None,
+        },
+    )
+    db.commit()
+
     return QuestionnaireListResponse(
         items=[_questionnaire_to_response(q) for q in questionnaires],
         total=len(questionnaires),
@@ -760,6 +777,19 @@ async def assign_questionnaire_to_patient(
         patient_id=patient_id,
         questionnaire_id=request.questionnaire_id,
     )
+
+    # Log assignment
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_create(
+        resource_type="questionnaire_assignment",
+        resource_id=response.id,
+        resource_name=f"{questionnaire.title} for {patient.full_name}",
+    )
+
     db.commit()
 
     return PatientQuestionnaireResponse(
@@ -873,6 +903,20 @@ async def get_questionnaire_response(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this response",
         )
+
+    # Log PHI access - questionnaire responses contain patient health information
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="questionnaire_response",
+        resource_id=response.id,
+        resource_name=f"{response.questionnaire.title if response.questionnaire else 'Unknown'} - {patient.full_name}",
+        phi_fields_accessed=["questionnaire_answers", "health_status", "symptoms"],
+    )
+    db.commit()
 
     # Build question lookup for answers
     question_lookup = {}

@@ -96,7 +96,25 @@ async def list_assignable_roles(
         .order_by(RoleDefinition.privilege_level.desc(), RoleDefinition.display_name)
     )
 
-    return query.all()
+    roles = query.all()
+
+    # Log access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="assignable_roles",
+        details={
+            "organization_id": str(organization_id),
+            "count": len(roles),
+        },
+    )
+    db.commit()
+
+    return roles
 
 
 def _practitioner_to_response(practitioner) -> PractitionerResponse:
@@ -178,6 +196,7 @@ async def list_clinicians(
             "count": len(practitioners),
         },
     )
+    db.commit()
 
     pages = (total + page_size - 1) // page_size
 
@@ -209,6 +228,22 @@ async def list_pending_invites(
 
     service = InviteService(db)
     invites = service.list_pending_invites(organization_id)
+
+    # Log access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="pending_invites",
+        details={
+            "organization_id": str(organization_id),
+            "count": len(invites),
+        },
+    )
+    db.commit()
 
     return [
         PendingInvite(
@@ -338,6 +373,19 @@ async def resend_invite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+    # Log action
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = invite.organization_id
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="resend_invite",
+        resource_type="invitation",
+        resource_id=invite.id,
+        resource_name=invite.full_name,
+    )
 
     db.commit()
 
@@ -498,6 +546,19 @@ async def get_clinician(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this clinician",
         )
+
+    # Log access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = list(shared_orgs)[0] if shared_orgs else None
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="practitioner",
+        resource_id=clinician.id,
+        resource_name=clinician.full_name,
+    )
+    db.commit()
 
     return _practitioner_to_response(clinician)
 

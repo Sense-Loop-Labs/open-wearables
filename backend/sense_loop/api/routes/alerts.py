@@ -152,7 +152,9 @@ async def list_alerts(
                 "severity": severity,
             },
         },
+        phi_fields_accessed=["patient_name", "vital_type", "observed_value"],
     )
+    db.commit()
 
     pages = (total + page_size - 1) // page_size
 
@@ -201,7 +203,9 @@ async def get_alert(
         resource_type="alert",
         resource_id=alert.id,
         resource_name=alert.title,
+        phi_fields_accessed=["patient_name", "vital_type", "observed_value"],
     )
+    db.commit()
 
     return _alert_to_response(alert)
 
@@ -411,6 +415,23 @@ async def get_alert_stats(
             Alert.severity == "warning",
         )
     ).scalar() or 0
+
+    # Log dashboard stats access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id or (org_ids[0] if org_ids else None)
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="view",
+        resource_type="alert_stats",
+        details={
+            "organization_ids": [str(oid) for oid in org_ids],
+            "active_count": active,
+            "critical_count": critical,
+        },
+    )
+    db.commit()
 
     return {
         "active": active,

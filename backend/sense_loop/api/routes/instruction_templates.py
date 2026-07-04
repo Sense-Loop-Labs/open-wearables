@@ -477,6 +477,23 @@ async def list_patient_plans(
     service = PatientInstructionPlanService(db)
     plans = service.list_for_patient(patient_id, status=status)
 
+    # Log access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="patient_instruction_plans",
+        details={
+            "patient_id": str(patient_id),
+            "count": len(plans),
+        },
+        phi_fields_accessed=["care_plan", "instructions"],
+    )
+    db.commit()
+
     return PatientPlanListResponse(
         items=[_plan_to_response(p) for p in plans],
         total=len(plans),
@@ -596,6 +613,21 @@ async def get_patient_plan_content(
             detail="Plan not found",
         )
 
+    # Log PHI access - full plan content with patient instructions
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    if plan.patient:
+        ctx.organization_id = plan.patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="patient_plan_content",
+        resource_id=plan.id,
+        resource_name=plan.template.title if plan.template else "Unknown",
+        phi_fields_accessed=["care_instructions", "activities", "medications"],
+    )
+    db.commit()
+
     content = service.get_resolved_content_with_activities(plan)
 
     return PatientPlanContent(
@@ -644,6 +676,20 @@ async def update_patient_plan(
         task_generation_service=task_service,
     )
 
+    # Log update
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    if plan.patient:
+        ctx.organization_id = plan.patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_update(
+        resource_type="patient_instruction_plan",
+        resource_id=plan.id,
+        resource_name=plan.template.title if plan.template else "Unknown",
+        changes=request.model_dump(exclude_unset=True),
+    )
+
     db.commit()
     return _plan_to_response(plan)
 
@@ -669,6 +715,21 @@ async def complete_patient_plan(
         )
 
     plan = service.complete(plan)
+
+    # Log completion
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    if plan.patient:
+        ctx.organization_id = plan.patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_update(
+        resource_type="patient_instruction_plan",
+        resource_id=plan.id,
+        resource_name=plan.template.title if plan.template else "Unknown",
+        changes={"status": {"old": "active", "new": "completed"}},
+    )
+
     db.commit()
     return _plan_to_response(plan)
 
@@ -695,6 +756,21 @@ async def cancel_patient_plan(
         )
 
     plan = service.cancel(plan, cancel_pending_tasks=cancel_pending_tasks)
+
+    # Log cancellation
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    if plan.patient:
+        ctx.organization_id = plan.patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_update(
+        resource_type="patient_instruction_plan",
+        resource_id=plan.id,
+        resource_name=plan.template.title if plan.template else "Unknown",
+        changes={"status": {"old": "active", "new": "cancelled"}},
+    )
+
     db.commit()
     return _plan_to_response(plan)
 
