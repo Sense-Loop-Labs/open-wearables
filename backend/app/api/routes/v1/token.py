@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, status
 
 from app.database import DbSession
@@ -5,6 +7,7 @@ from app.schemas.auth import RefreshTokenRequest, TokenResponse
 from app.services import refresh_token_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/token/refresh")
@@ -28,7 +31,17 @@ def refresh_token(
     Raises:
         401: If the refresh token is invalid or revoked
     """
-    return refresh_token_service.refresh_token(db, payload.refresh_token)
+    result = refresh_token_service.refresh_token(db, payload.refresh_token)
+
+    # Log session refresh for audit trail
+    # Note: We log at INFO level for successful refreshes, detailed user info
+    # is available in the refresh_token_service debug logs
+    logger.info(
+        "Session refreshed: token rotated successfully",
+        extra={"token_type": "sdk_or_developer"},
+    )
+
+    return result
 
 
 @router.post("/token/revoke", status_code=status.HTTP_204_NO_CONTENT)
@@ -50,3 +63,9 @@ def revoke_refresh_token(
         404: If the refresh token is not found
     """
     refresh_token_service.revoke_token(db, payload.refresh_token)
+
+    # Log session revocation for audit trail
+    logger.info(
+        "Session revoked: refresh token invalidated",
+        extra={"action": "session_revoke"},
+    )

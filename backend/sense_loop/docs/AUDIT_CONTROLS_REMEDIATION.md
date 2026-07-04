@@ -250,8 +250,9 @@ audit.log(
 - [x] **Add session audit events** ✅ Completed July 4, 2026
   - [x] Log logout
   - [x] Log password reset success/failure
-  - [ ] Log session refresh/renewal (not yet implemented)
-  - [ ] Log session timeout (not yet implemented)
+  - [x] Log session refresh/renewal (SDK/patient tokens)
+  - [x] Log session revocation
+  - [ ] Log session timeout (requires background job)
 
 - [x] **Add authorization denial logging** ✅ Completed July 4, 2026
   - [x] Create middleware for 403 responses

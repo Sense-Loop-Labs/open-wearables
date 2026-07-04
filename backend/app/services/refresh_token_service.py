@@ -116,6 +116,9 @@ class RefreshTokenService:
                 app_id=token.app_id,  # type: ignore[arg-type]
             )
             self.logger.debug(f"Refreshed SDK token for user {token.user_id} (rotated)")
+
+            # Log session refresh for HIPAA audit trail (SDK tokens are patient sessions)
+            self._log_session_refresh(db_session, token.user_id, token.app_id)
         elif token.token_type == TokenType.DEVELOPER:
             access_token = create_access_token(subject=str(token.developer_id))
             new_refresh_token = self.create_developer_refresh_token(
@@ -135,6 +138,43 @@ class RefreshTokenService:
             refresh_token=new_refresh_token,
             expires_in=settings.access_token_expire_minutes * 60,
         )
+
+    def _log_session_refresh(
+        self, db_session: DbSession, user_id: UUID | None, app_id: str | None
+    ) -> None:
+        """Log session refresh for HIPAA audit trail."""
+        try:
+            from sense_loop.audit import AuditLogger
+            from sense_loop.audit.context import AuditContext
+            from sense_loop.models import Patient
+            from sqlalchemy import select
+
+            if not user_id:
+                return
+
+            # Try to find the patient by OW user ID
+            stmt = select(Patient).where(Patient.ow_user_id == user_id)
+            patient = db_session.execute(stmt).scalar_one_or_none()
+
+            if patient:
+                audit_ctx = AuditContext(
+                    actor_type="patient",
+                    actor_id=patient.id,
+                    actor_name=patient.full_name,
+                    actor_email=patient.email,
+                    organization_id=patient.organization_id,
+                    endpoint="/api/v1/token/refresh",
+                    http_method="POST",
+                )
+                audit = AuditLogger(db_session, audit_ctx)
+                audit.log(
+                    action="session_refresh",
+                    resource_type="session",
+                    details={"app_id": app_id},
+                )
+                # Note: commit happens in the calling code
+        except Exception as e:
+            self.logger.warning(f"Failed to log session refresh audit: {e}")
 
     def revoke_token(self, db_session: DbSession, refresh_token_str: str) -> bool:
         """Revoke a refresh token.
@@ -156,9 +196,50 @@ class RefreshTokenService:
                 detail="Refresh token not found",
             )
 
+        # Log session revocation for SDK tokens (patient sessions)
+        if token.token_type == TokenType.SDK:
+            self._log_session_revoke(db_session, token.user_id, token.app_id)
+
         self.repo.revoke_token(db_session, token)
         self.logger.debug(f"Revoked refresh token {refresh_token_str[:10]}...")
         return True
+
+    def _log_session_revoke(
+        self, db_session: DbSession, user_id: UUID | None, app_id: str | None
+    ) -> None:
+        """Log session revocation for HIPAA audit trail."""
+        try:
+            from sense_loop.audit import AuditLogger
+            from sense_loop.audit.context import AuditContext
+            from sense_loop.models import Patient
+            from sqlalchemy import select
+
+            if not user_id:
+                return
+
+            # Try to find the patient by OW user ID
+            stmt = select(Patient).where(Patient.ow_user_id == user_id)
+            patient = db_session.execute(stmt).scalar_one_or_none()
+
+            if patient:
+                audit_ctx = AuditContext(
+                    actor_type="patient",
+                    actor_id=patient.id,
+                    actor_name=patient.full_name,
+                    actor_email=patient.email,
+                    organization_id=patient.organization_id,
+                    endpoint="/api/v1/token/revoke",
+                    http_method="POST",
+                )
+                audit = AuditLogger(db_session, audit_ctx)
+                audit.log(
+                    action="session_revoke",
+                    resource_type="session",
+                    details={"app_id": app_id},
+                )
+                # Note: commit happens in the calling code
+        except Exception as e:
+            self.logger.warning(f"Failed to log session revoke audit: {e}")
 
 
 refresh_token_service = RefreshTokenService(log=getLogger(__name__))
