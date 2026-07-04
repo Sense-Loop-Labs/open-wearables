@@ -201,6 +201,7 @@ async def list_patients(
             },
         },
     )
+    db.commit()
 
     pages = (total + page_size - 1) // page_size
 
@@ -270,6 +271,7 @@ async def get_patient(
         resource_name=patient.full_name,
         phi_fields_accessed=["first_name", "last_name", "date_of_birth", "email", "phone"],
     )
+    db.commit()
 
     response = _patient_to_response(patient, db)
 
@@ -713,6 +715,20 @@ async def get_patient_vitals(
     # Sort all readings by timestamp descending
     readings.sort(key=lambda r: r.recorded_at, reverse=True)
 
+    # Log PHI access - vitals are clinical data
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="patient_vitals",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=[vital_type] if vital_type else list(VITAL_TYPES.keys()),
+    )
+    db.commit()
+
     # Paginate
     total = len(readings)
     pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -841,6 +857,20 @@ async def get_patient_workouts(
             )
         )
 
+    # Log PHI access - workout/activity data
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="patient_workouts",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=["workout_type", "duration", "heart_rate", "calories"],
+    )
+    db.commit()
+
     # Paginate
     total = len(workouts)
     pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -966,6 +996,20 @@ async def get_patient_sleep(
             )
         )
 
+    # Log PHI access - sleep data
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="patient_sleep",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=["sleep_duration", "sleep_stages", "sleep_efficiency"],
+    )
+    db.commit()
+
     # Paginate
     total = len(sleep_records)
     pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -1074,6 +1118,20 @@ async def get_patient_devices(
         )
         for d in devices
     ]
+
+    # Log device access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = patient.organization_id
+
+    audit = AuditLogger(db)
+    audit.log_access(
+        resource_type="patient_devices",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=["device_info", "data_sources"],
+    )
+    db.commit()
 
     return ConnectedDevicesResponse(
         wearables=wearables,

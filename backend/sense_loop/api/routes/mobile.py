@@ -10,6 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
 from app.database import DbSession
+from sense_loop.audit import AuditLogger
+from sense_loop.audit.context import AuditContext
 from sense_loop.schemas.mobile import (
     ActivitySummary,
     BloodPressureSummary,
@@ -537,6 +539,25 @@ async def get_summary(
         weekly_trend=weekly_trend,
     )
 
+    # Log patient accessing their own health summary
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint="/api/v1/sl/data/summary",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log_access(
+        resource_type="patient_summary",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=["vitals", "heart_rate", "temperature", "sleep", "activity"],
+    )
+    db.commit()
+
     return DashboardSummaryResponse(
         vitals=vitals,
         recovery=recovery,
@@ -613,6 +634,25 @@ async def get_care_plan(
     if patient.summary:
         last_questionnaire_completed_at = patient.summary.last_questionnaire_response_at
 
+    # Log patient accessing care plan
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint="/api/v1/sl/data/care-plan",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log_access(
+        resource_type="care_plan",
+        resource_id=patient.id,
+        resource_name=patient.full_name,
+        phi_fields_accessed=["medications", "activity_restrictions", "warning_signs", "questionnaires"],
+    )
+    db.commit()
+
     return CarePlanResponse(
         patient_id=patient.id,
         care_plans=[
@@ -679,6 +719,29 @@ async def submit_questionnaire(
     ]
 
     response = service.submit_answers(response, answers)
+
+    # Log questionnaire submission - clinical data being created
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint="/api/v1/sl/data/questionnaire/submit",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log_create(
+        resource_type="questionnaire_response",
+        resource_id=response.id,
+        resource_name=response.questionnaire.title if response.questionnaire else None,
+        details={
+            "questionnaire_id": str(response.questionnaire_id),
+            "answer_count": len(answers),
+            "total_score": response.total_score,
+        },
+    )
+
     db.commit()
 
     return QuestionnaireSubmitResponse(
@@ -792,6 +855,25 @@ async def complete_task(
 
     service = TaskCompletionService(db)
     task = service.complete_task_manually(task, notes=notes, completed_by="user")
+
+    # Log task completion
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint=f"/api/v1/sl/data/tasks/{task_id}/complete",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log_update(
+        resource_type="patient_task",
+        resource_id=task.id,
+        resource_name=task.title,
+        changes={"status": {"old": "pending", "new": "completed"}},
+    )
+
     db.commit()
 
     return TaskActionResponse(
@@ -830,6 +912,25 @@ async def skip_task(
 
     service = TaskCompletionService(db)
     task = service.skip_task(task, reason=reason)
+
+    # Log task skip
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint=f"/api/v1/sl/data/tasks/{task_id}/skip",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log_update(
+        resource_type="patient_task",
+        resource_id=task.id,
+        resource_name=task.title,
+        changes={"status": {"old": "pending", "new": "skipped"}, "skip_reason": {"old": None, "new": reason}},
+    )
+
     db.commit()
 
     return TaskActionResponse(
@@ -875,6 +976,26 @@ async def snooze_task(
 
     service = TaskCompletionService(db)
     task = service.snooze_task(task, snooze_minutes=snooze_minutes)
+
+    # Log task snooze
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint=f"/api/v1/sl/data/tasks/{task_id}/snooze",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+    audit.log(
+        action="snooze",
+        resource_type="patient_task",
+        resource_id=task.id,
+        resource_name=task.title,
+        details={"snooze_minutes": snooze_minutes, "snooze_count": task.snooze_count},
+    )
+
     db.commit()
 
     return TaskActionResponse(
@@ -1032,6 +1153,18 @@ async def register_device(
     stmt = select(PatientDevice).where(PatientDevice.device_token == request.device_token)
     existing = db.execute(stmt).scalar_one_or_none()
 
+    # Prepare audit context
+    audit_ctx = AuditContext(
+        actor_type="patient",
+        actor_id=patient.id,
+        actor_name=patient.full_name,
+        actor_email=patient.email,
+        organization_id=patient.organization_id,
+        endpoint="/api/v1/sl/data/devices/register",
+        http_method="POST",
+    )
+    audit = AuditLogger(db, audit_ctx)
+
     if existing:
         # Update existing device
         existing.patient_id = patient.id
@@ -1041,6 +1174,13 @@ async def register_device(
         existing.is_active = True
         existing.last_used_at = datetime.utcnow()
         existing.updated_at = datetime.utcnow()
+
+        audit.log_update(
+            resource_type="patient_device",
+            resource_id=existing.id,
+            resource_name=request.device_name,
+            changes={"is_active": {"old": str(not existing.is_active), "new": "True"}},
+        )
         db.commit()
 
         return DeviceRegisterResponse(
@@ -1061,6 +1201,13 @@ async def register_device(
         last_used_at=datetime.utcnow(),
     )
     db.add(device)
+
+    audit.log_create(
+        resource_type="patient_device",
+        resource_id=device.id,
+        resource_name=request.device_name,
+        details={"platform": request.platform, "app_version": request.app_version},
+    )
     db.commit()
 
     return DeviceRegisterResponse(
@@ -1091,6 +1238,24 @@ async def unregister_device(
     if device:
         device.is_active = False
         device.updated_at = datetime.utcnow()
+
+        # Log device unregistration
+        audit_ctx = AuditContext(
+            actor_type="patient",
+            actor_id=patient.id,
+            actor_name=patient.full_name,
+            actor_email=patient.email,
+            organization_id=patient.organization_id,
+            endpoint="/api/v1/sl/data/devices/unregister",
+            http_method="POST",
+        )
+        audit = AuditLogger(db, audit_ctx)
+        audit.log_update(
+            resource_type="patient_device",
+            resource_id=device.id,
+            resource_name=device.device_name,
+            changes={"is_active": {"old": "True", "new": "False"}},
+        )
         db.commit()
 
     return {"success": True, "message": "Device unregistered"}

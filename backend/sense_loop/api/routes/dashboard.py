@@ -8,6 +8,7 @@ from sqlalchemy import and_, func, select
 
 from app.database import DbSession
 from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
+from sense_loop.audit import AuditLogger, get_audit_context
 from sense_loop.models import Alert, Patient, PatientSummary
 
 router = APIRouter()
@@ -152,6 +153,23 @@ async def get_dashboard_overview(
         )
     ).scalar() or 0
 
+    # Log dashboard access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id or (org_ids[0] if org_ids else None)
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="view",
+        resource_type="dashboard_overview",
+        details={
+            "organization_ids": [str(oid) for oid in org_ids],
+            "patient_count": total_patients,
+            "active_alerts": active_alerts,
+        },
+    )
+    db.commit()
+
     return {
         "patients": {
             "total": total_patients,
@@ -217,6 +235,24 @@ async def get_critical_patients(
 
     patients = db.execute(stmt).scalars().all()
 
+    # Log PHI access - patient names and MRNs are being viewed
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id or (org_ids[0] if org_ids else None)
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="critical_patients",
+        details={
+            "patient_ids": [str(p.id) for p in patients],
+            "count": len(patients),
+            "organization_ids": [str(oid) for oid in org_ids],
+        },
+        phi_fields_accessed=["full_name", "mrn", "status", "alert_count"],
+    )
+    db.commit()
+
     return [
         {
             "id": p.id,
@@ -267,6 +303,25 @@ async def get_recent_alerts(
     )
 
     alerts = db.execute(stmt).scalars().all()
+
+    # Log PHI access - patient names and vital values are being viewed
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id or (org_ids[0] if org_ids else None)
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="list",
+        resource_type="recent_alerts",
+        details={
+            "alert_ids": [str(a.id) for a in alerts],
+            "patient_ids": list({str(a.patient_id) for a in alerts}),
+            "count": len(alerts),
+            "organization_ids": [str(oid) for oid in org_ids],
+        },
+        phi_fields_accessed=["patient_name", "vital_type", "observed_value"],
+    )
+    db.commit()
 
     return [
         {
@@ -357,5 +412,22 @@ async def get_alerts_by_day(
             "critical": critical,
             "warning": warning,
         })
+
+    # Log dashboard chart access
+    ctx = get_audit_context()
+    ctx.set_practitioner(practitioner)
+    ctx.organization_id = organization_id or (org_ids[0] if org_ids else None)
+
+    audit = AuditLogger(db)
+    audit.log(
+        action="view",
+        resource_type="alerts_chart",
+        details={
+            "days": days,
+            "organization_ids": [str(oid) for oid in org_ids],
+            "total_alerts": sum(r["total"] for r in results),
+        },
+    )
+    db.commit()
 
     return results
