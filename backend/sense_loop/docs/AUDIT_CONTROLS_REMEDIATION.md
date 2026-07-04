@@ -272,11 +272,11 @@ audit.log(
   - [ ] Log when audit logs are queried
   - [ ] Track who accessed audit reports
 
-- [ ] **Create compliance reporting**
-  - [ ] PHI access report by user
-  - [ ] Failed access attempt report
-  - [ ] Emergency access report
-  - [ ] Export activity report
+- [x] **Create compliance reporting** ✅ Completed July 4, 2026
+  - [x] PHI access report by user (`/reports/phi-access`)
+  - [x] Failed access attempt report (`/reports/failed-access`)
+  - [x] Emergency access report (`/reports/emergency-access`)
+  - [x] Export activity report (`/reports/exports`)
 
 ---
 

@@ -300,6 +300,134 @@ Backfills hashes for entries created before hash chain was implemented:
 
 Requires `super_admin` role.
 
+### 5.2 Compliance Reports
+
+All require `super_admin` or `org_admin` role.
+
+**GET /api/v1/sl/compliance/reports/phi-access**
+
+PHI access report grouped by user. Shows who accessed PHI, how many times, and which fields.
+
+Query parameters:
+- `days` - Number of days to include (default: 30, max: 365)
+- `organization_id` - Filter by organization (optional)
+
+```json
+{
+    "report_start": "2026-06-04T00:00:00Z",
+    "report_end": "2026-07-04T00:00:00Z",
+    "total_accesses": 1523,
+    "unique_actors": 12,
+    "users": [
+        {
+            "actor_id": "uuid",
+            "actor_name": "Dr. Smith",
+            "actor_email": "smith@hospital.com",
+            "actor_type": "practitioner",
+            "total_accesses": 342,
+            "unique_resources": 45,
+            "phi_fields": ["heart_rate", "blood_pressure", "first_name"],
+            "last_access_at": "2026-07-04T14:30:00Z"
+        }
+    ]
+}
+```
+
+**GET /api/v1/sl/compliance/reports/failed-access**
+
+Failed/denied access attempts. Useful for detecting unauthorized access patterns.
+
+Query parameters:
+- `days` - Number of days to include (default: 30)
+- `organization_id` - Filter by organization (optional)
+- `limit` - Max entries to return (default: 100, max: 1000)
+
+```json
+{
+    "report_start": "2026-06-04T00:00:00Z",
+    "report_end": "2026-07-04T00:00:00Z",
+    "total_failures": 23,
+    "by_reason": {
+        "User not authorized for this organization": 15,
+        "Patient not found": 5,
+        "Invalid credentials": 3
+    },
+    "entries": [
+        {
+            "id": "uuid",
+            "timestamp": "2026-07-04T10:15:00Z",
+            "actor_type": "practitioner",
+            "actor_name": "Unknown User",
+            "action": "read",
+            "resource_type": "patient",
+            "outcome_reason": "User not authorized",
+            "ip_address": "192.168.1.100"
+        }
+    ]
+}
+```
+
+**GET /api/v1/sl/compliance/reports/exports**
+
+Data export activity. Tracks PHI disclosure through exports and downloads.
+
+Query parameters:
+- `days` - Number of days to include (default: 30)
+- `organization_id` - Filter by organization (optional)
+- `limit` - Max entries to return (default: 100, max: 1000)
+
+```json
+{
+    "report_start": "2026-06-04T00:00:00Z",
+    "report_end": "2026-07-04T00:00:00Z",
+    "total_exports": 8,
+    "by_resource_type": {
+        "patient_vitals": 5,
+        "patient_summary": 3
+    },
+    "entries": [
+        {
+            "id": "uuid",
+            "timestamp": "2026-07-03T16:00:00Z",
+            "actor_name": "Dr. Smith",
+            "resource_type": "patient_vitals",
+            "resource_id": "uuid",
+            "resource_name": "John Doe",
+            "details": {"format": "csv", "date_range": "30d"},
+            "outcome": "success"
+        }
+    ]
+}
+```
+
+**GET /api/v1/sl/compliance/reports/emergency-access**
+
+Emergency/break-glass access events. These bypass normal authorization and require justification.
+
+Query parameters:
+- `days` - Number of days to include (default: 90)
+- `organization_id` - Filter by organization (optional)
+
+```json
+{
+    "report_start": "2026-04-04T00:00:00Z",
+    "report_end": "2026-07-04T00:00:00Z",
+    "total_emergency_accesses": 2,
+    "entries": [
+        {
+            "id": "uuid",
+            "timestamp": "2026-06-15T03:30:00Z",
+            "actor_name": "Dr. Emergency",
+            "action": "emergency_access",
+            "resource_type": "patient",
+            "resource_name": "Jane Doe",
+            "reason": "Patient unresponsive, needed history",
+            "details": {"justification": "Emergency room admission"}
+        }
+    ]
+}
+```
+
 ---
 
 ## 6. Usage Examples

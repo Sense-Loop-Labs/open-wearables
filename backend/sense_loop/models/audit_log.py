@@ -127,6 +127,19 @@ class AuditAction:
     DEACTIVATE = "deactivate"
     ACTIVATE = "activate"
 
+    # Emergency/break-glass access
+    EMERGENCY_ACCESS = "emergency_access"
+    BREAK_GLASS = "break_glass"
+
+    # Session events
+    SESSION_REFRESH = "session_refresh"
+    SESSION_REVOKE = "session_revoke"
+
+    # Compliance
+    VERIFY = "verify"
+    BACKFILL = "backfill"
+    INTEGRITY_CHECK_FAILED = "integrity_check_failed"
+
 
 # PHI field categories for audit tracking
 class PHICategory:
