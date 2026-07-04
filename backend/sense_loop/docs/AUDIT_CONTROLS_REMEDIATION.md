@@ -265,6 +265,8 @@ audit.log(
   - [x] Create verification endpoint (/sl/compliance/audit/integrity)
   - [x] Add backfill endpoint for existing entries (/sl/compliance/audit/backfill-hashes)
   - [x] Add chain summary endpoint (/sl/compliance/audit/summary)
+  - [x] Add database trigger to prevent UPDATE/DELETE on audit log
+  - [x] Add scheduled daily verification task (Celery Beat at 05:00 UTC)
 
 - [ ] **Add audit log access auditing**
   - [ ] Log when audit logs are queried

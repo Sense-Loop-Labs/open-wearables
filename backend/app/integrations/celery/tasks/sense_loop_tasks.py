@@ -18,6 +18,9 @@ from app.models.hr_analysis import HRBaseline
 
 logger = logging.getLogger(__name__)
 
+# Alert email for critical audit failures
+AUDIT_ALERT_EMAIL = "compliance@sense-loop.com"  # Configure in settings
+
 
 @shared_task(
     name="sense_loop.process_vitals",
@@ -226,3 +229,96 @@ def _calculate_baseline_for_user(db: Any, user_id: UUID) -> None:
         std_hr,
         elevated_threshold,
     )
+
+
+@shared_task(
+    name="sense_loop.verify_audit_integrity",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=3,
+)
+def verify_audit_integrity(self: Any) -> dict[str, Any]:
+    """Daily task to verify audit log integrity.
+
+    Checks the hash chain of the audit log to detect any tampering.
+    Logs warnings and can send alerts if integrity issues are found.
+
+    Should be scheduled to run daily via Celery Beat.
+    """
+    from sense_loop.audit import AuditIntegrityService
+
+    db = SessionLocal()
+    try:
+        service = AuditIntegrityService(db)
+
+        # Get summary first
+        summary = service.get_chain_summary()
+
+        # Verify the full chain
+        result = service.verify_chain(limit=100000)  # Check up to 100k entries
+
+        if result.is_valid:
+            logger.info(
+                "Audit log integrity verified: %d entries checked, chain valid",
+                result.entries_checked,
+            )
+            return {
+                "success": True,
+                "is_valid": True,
+                "entries_checked": result.entries_checked,
+                "total_entries": summary["total_entries"],
+                "hashed_coverage": summary["chain_coverage_percent"],
+            }
+        else:
+            # CRITICAL: Integrity failure detected
+            logger.critical(
+                "AUDIT LOG INTEGRITY FAILURE: %s at sequence %d (entry %s)",
+                result.error_message,
+                result.first_invalid_sequence,
+                result.first_invalid_id,
+            )
+
+            # Log the failure as an audit event itself
+            from sense_loop.audit import AuditLogger
+            from sense_loop.audit.context import AuditContext
+
+            ctx = AuditContext(
+                actor_type="system",
+                endpoint="celery:verify_audit_integrity",
+                http_method="SCHEDULED",
+            )
+            audit = AuditLogger(db, ctx)
+            audit.log(
+                action="integrity_check_failed",
+                resource_type="audit_log",
+                outcome="failure",
+                outcome_reason=result.error_message,
+                details={
+                    "first_invalid_sequence": result.first_invalid_sequence,
+                    "first_invalid_id": str(result.first_invalid_id) if result.first_invalid_id else None,
+                    "entries_checked": result.entries_checked,
+                    "gaps_detected": result.gaps_detected,
+                },
+            )
+            db.commit()
+
+            # TODO: Send alert email/notification
+            # This should trigger immediate investigation
+
+            return {
+                "success": True,
+                "is_valid": False,
+                "error": result.error_message,
+                "first_invalid_sequence": result.first_invalid_sequence,
+                "entries_checked": result.entries_checked,
+                "gaps_detected": result.gaps_detected,
+            }
+
+    except Exception as e:
+        logger.error("Error verifying audit log integrity: %s", str(e), exc_info=True)
+        db.rollback()
+        raise
+    finally:
+        db.close()

@@ -181,6 +181,13 @@ def create_celery() -> Celery:
             "args": (),
             "kwargs": {},
         },
+        # HIPAA COMPLIANCE: Verify audit log integrity daily
+        "sl-verify-audit-integrity": {
+            "task": "sense_loop.verify_audit_integrity",
+            "schedule": crontab(hour=5, minute=0),  # Daily at 05:00 UTC
+            "args": (),
+            "kwargs": {},
+        },
     }
 
     return celery_app
