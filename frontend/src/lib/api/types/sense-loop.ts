@@ -264,7 +264,8 @@ export type VitalType =
   | 'spo2'
   | 'temperature'
   | 'respiratory_rate'
-  | 'hrv';
+  | 'hrv'
+  | 'steps';
 
 export interface VitalReading {
   vital_type: VitalType;
@@ -290,6 +291,112 @@ export interface VitalsQueryParams {
   aggregate_hr?: boolean;
   page?: number;
   page_size?: number;
+}
+
+// ============================================================================
+// Workouts
+// ============================================================================
+
+export interface WorkoutReading {
+  id: string;
+  workout_type: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  distance_meters: number | null;
+  calories: number | null;
+  heart_rate_avg: number | null;
+  heart_rate_max: number | null;
+  steps: number | null;
+  source: string | null;
+}
+
+export interface WorkoutsHistoryResponse {
+  items: WorkoutReading[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface WorkoutsQueryParams {
+  page?: number;
+  page_size?: number;
+}
+
+// ============================================================================
+// Sleep
+// ============================================================================
+
+export interface SleepReading {
+  id: string;
+  start_time: string;
+  end_time: string;
+  total_minutes: number | null;
+  rem_minutes: number | null;
+  deep_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  efficiency_percent: number | null;
+  is_nap: boolean;
+  source: string | null;
+}
+
+export interface SleepHistoryResponse {
+  items: SleepReading[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface SleepQueryParams {
+  page?: number;
+  page_size?: number;
+}
+
+// ============================================================================
+// Patient Devices
+// ============================================================================
+
+export interface WearableDevice {
+  id: string;
+  name: string;
+  device_model: string | null;
+  device_type: string | null;
+  provider: string;
+  last_data_at: string | null;
+}
+
+export interface AppInstallation {
+  id: string;
+  platform: string;
+  device_name: string | null;
+  app_version: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface ConnectedDevicesResponse {
+  wearables: WearableDevice[];
+  app_installations: AppInstallation[];
+}
+
+// Legacy - kept for compatibility
+export interface PatientDevice {
+  id: string;
+  platform: string;
+  device_name: string | null;
+  app_version: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface PatientDeviceListResponse {
+  items: PatientDevice[];
+  total: number;
 }
 
 // ============================================================================

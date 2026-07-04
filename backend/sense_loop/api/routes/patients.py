@@ -11,13 +11,21 @@ from sense_loop.access import CurrentPractitioner, Permission, PolicyEngine
 from sense_loop.audit import AuditLogger, get_audit_context
 from sense_loop.config import sl_settings
 from sense_loop.schemas.patient import (
+    ConnectedDevicesResponse,
     PatientCreate,
+    PatientDeviceListResponse,
+    PatientDeviceResponse,
     PatientListResponse,
     PatientResponse,
     PatientSummaryResponse,
     PatientUpdate,
+    SleepHistoryResponse,
+    SleepReading,
     VitalReading,
     VitalsHistoryResponse,
+    WearableDeviceResponse,
+    WorkoutReading,
+    WorkoutsHistoryResponse,
 )
 from sense_loop.services import EnrollmentService, PatientService
 
@@ -496,6 +504,7 @@ VITAL_TYPES = {
         "label": "HRV",
         "unit": "ms",
     },
+    "steps": {"codes": ["steps"], "label": "Steps", "unit": "steps"},
 }
 
 
@@ -515,7 +524,7 @@ async def get_patient_vitals(
     By default, heart rate data is aggregated to hourly averages to reduce volume.
     Set aggregate_hr=false to get individual HR readings.
 
-    Valid vital_type values: heart_rate, blood_pressure, spo2, temperature, respiratory_rate, hrv
+    Valid vital_type values: heart_rate, blood_pressure, spo2, temperature, respiratory_rate, hrv, steps
     """
     from datetime import timedelta
 
@@ -571,8 +580,11 @@ async def get_patient_vitals(
         codes_to_query = VITAL_TYPES[vital_type]["codes"]
     else:
         # All vitals except HR if aggregating (HR handled separately)
+        # Also exclude steps from "all" view - too granular, use Workouts tab instead
         codes_to_query = []
         for vt, config in VITAL_TYPES.items():
+            if vt == "steps":
+                continue  # Skip steps in "all" view
             if vt != "heart_rate" or not aggregate_hr:
                 codes_to_query.extend(config["codes"])
 
@@ -715,4 +727,355 @@ async def get_patient_vitals(
         page_size=page_size,
         pages=pages,
         vital_type=vital_type,
+    )
+
+
+@router.get("/{patient_id}/workouts", response_model=WorkoutsHistoryResponse)
+async def get_patient_workouts(
+    patient_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """Get workout history for a patient.
+
+    Returns paginated workout records from event_record + workout_details.
+    Includes walking, running, cycling, and other exercise sessions.
+    """
+    from app.models import DataSource
+    from app.models.event_record import EventRecord
+    from app.models.workout_details import WorkoutDetails
+
+    service = PatientService(db)
+    patient = service.get_by_id(patient_id)
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        patient.organization_id,
+        action="read",
+        resource_type="patient",
+        resource_id=patient_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this patient's workouts",
+        )
+
+    if not patient.ow_user_id:
+        # No linked OW account, return empty
+        return WorkoutsHistoryResponse(
+            items=[],
+            total=0,
+            page=page,
+            page_size=page_size,
+            pages=0,
+        )
+
+    # Query workouts from event_record + workout_details
+    stmt = (
+        select(
+            EventRecord.id,
+            EventRecord.type,
+            EventRecord.start_datetime,
+            EventRecord.end_datetime,
+            EventRecord.duration_seconds,
+            WorkoutDetails.distance,
+            WorkoutDetails.energy_burned,
+            WorkoutDetails.heart_rate_avg,
+            WorkoutDetails.heart_rate_max,
+            WorkoutDetails.steps_count,
+            DataSource.source,
+        )
+        .join(DataSource, EventRecord.data_source_id == DataSource.id)
+        .outerjoin(WorkoutDetails, EventRecord.id == WorkoutDetails.record_id)
+        .where(
+            DataSource.user_id == patient.ow_user_id,
+            EventRecord.category == "workout",
+        )
+        .order_by(EventRecord.start_datetime.desc())
+    )
+    results = db.execute(stmt).all()
+
+    # Convert to WorkoutReading objects
+    workouts: list[WorkoutReading] = []
+    for row in results:
+        (
+            workout_id,
+            workout_type,
+            start_time,
+            end_time,
+            duration_seconds,
+            distance,
+            energy_burned,
+            hr_avg,
+            hr_max,
+            steps,
+            source,
+        ) = row
+
+        duration_min = int(duration_seconds / 60) if duration_seconds else 0
+
+        workouts.append(
+            WorkoutReading(
+                id=workout_id,
+                workout_type=workout_type or "Unknown",
+                start_time=start_time,
+                end_time=end_time,
+                duration_minutes=duration_min,
+                distance_meters=float(distance) if distance else None,
+                calories=float(energy_burned) if energy_burned else None,
+                heart_rate_avg=int(hr_avg) if hr_avg else None,
+                heart_rate_max=int(hr_max) if hr_max else None,
+                steps=steps,
+                source=source,
+            )
+        )
+
+    # Paginate
+    total = len(workouts)
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated = workouts[start_idx:end_idx]
+
+    return WorkoutsHistoryResponse(
+        items=paginated,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
+
+
+@router.get("/{patient_id}/sleep", response_model=SleepHistoryResponse)
+async def get_patient_sleep(
+    patient_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """Get sleep history for a patient.
+
+    Returns paginated sleep records from event_record + sleep_details.
+    Includes total sleep time, REM, deep, light sleep stages, and efficiency.
+    """
+    from app.models import DataSource
+    from app.models.event_record import EventRecord
+    from app.models.sleep_details import SleepDetails
+
+    service = PatientService(db)
+    patient = service.get_by_id(patient_id)
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        patient.organization_id,
+        action="read",
+        resource_type="patient",
+        resource_id=patient_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this patient's sleep data",
+        )
+
+    if not patient.ow_user_id:
+        # No linked OW account, return empty
+        return SleepHistoryResponse(
+            items=[],
+            total=0,
+            page=page,
+            page_size=page_size,
+            pages=0,
+        )
+
+    # Query sleep from event_record + sleep_details
+    stmt = (
+        select(
+            EventRecord.id,
+            EventRecord.start_datetime,
+            EventRecord.end_datetime,
+            SleepDetails.sleep_total_duration_minutes,
+            SleepDetails.sleep_rem_minutes,
+            SleepDetails.sleep_deep_minutes,
+            SleepDetails.sleep_light_minutes,
+            SleepDetails.sleep_awake_minutes,
+            SleepDetails.sleep_efficiency_score,
+            SleepDetails.is_nap,
+            DataSource.source,
+        )
+        .join(DataSource, EventRecord.data_source_id == DataSource.id)
+        .outerjoin(SleepDetails, EventRecord.id == SleepDetails.record_id)
+        .where(
+            DataSource.user_id == patient.ow_user_id,
+            EventRecord.category == "sleep",
+        )
+        .order_by(EventRecord.start_datetime.desc())
+    )
+    results = db.execute(stmt).all()
+
+    # Convert to SleepReading objects
+    sleep_records: list[SleepReading] = []
+    for row in results:
+        (
+            record_id,
+            start_time,
+            end_time,
+            total_min,
+            rem_min,
+            deep_min,
+            light_min,
+            awake_min,
+            efficiency,
+            is_nap,
+            source,
+        ) = row
+
+        sleep_records.append(
+            SleepReading(
+                id=record_id,
+                start_time=start_time,
+                end_time=end_time,
+                total_minutes=total_min,
+                rem_minutes=rem_min,
+                deep_minutes=deep_min,
+                light_minutes=light_min,
+                awake_minutes=awake_min,
+                efficiency_percent=float(efficiency) if efficiency else None,
+                is_nap=is_nap or False,
+                source=source,
+            )
+        )
+
+    # Paginate
+    total = len(sleep_records)
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated = sleep_records[start_idx:end_idx]
+
+    return SleepHistoryResponse(
+        items=paginated,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
+
+
+@router.get("/{patient_id}/devices", response_model=ConnectedDevicesResponse)
+async def get_patient_devices(
+    patient_id: UUID,
+    db: DbSession,
+    practitioner: CurrentPractitioner,
+):
+    """Get connected devices for a patient.
+
+    Returns both:
+    - Wearable devices that send health data (Apple Watch, Fitbit, scales, etc.)
+    - App installations registered for push notifications
+    """
+    from sqlalchemy import func
+
+    from app.models import DataSource
+    from app.models.data_point_series import DataPointSeries
+    from sense_loop.models import PatientDevice
+
+    service = PatientService(db)
+    patient = service.get_by_id(patient_id)
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found",
+        )
+
+    # Check access
+    engine = PolicyEngine(db)
+    if not engine.is_authorized_with_parallel_check(
+        practitioner,
+        Permission.MANAGE_PATIENTS,
+        patient.organization_id,
+        action="read",
+        resource_type="patient",
+        resource_id=patient_id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this patient's devices",
+        )
+
+    # Get wearable devices from DataSource (health data sources)
+    wearables: list[WearableDeviceResponse] = []
+    if patient.ow_user_id:
+        # Get data sources with their latest data timestamp
+        stmt = (
+            select(
+                DataSource,
+                func.max(DataPointSeries.recorded_at).label("last_data_at"),
+            )
+            .outerjoin(DataPointSeries, DataSource.id == DataPointSeries.data_source_id)
+            .where(DataSource.user_id == patient.ow_user_id)
+            .group_by(DataSource.id)
+            .order_by(func.max(DataPointSeries.recorded_at).desc().nulls_last())
+        )
+        results = db.execute(stmt).all()
+
+        for ds, last_data_at in results:
+            # Use source (device name) or fall back to device_model or provider
+            name = ds.source or ds.original_source_name or ds.device_model or ds.provider
+            wearables.append(
+                WearableDeviceResponse(
+                    id=ds.id,
+                    name=name,
+                    device_model=ds.device_model,
+                    device_type=ds.device_type,
+                    provider=ds.provider,
+                    last_data_at=last_data_at,
+                )
+            )
+
+    # Get app installations (for push notifications)
+    stmt = (
+        select(PatientDevice)
+        .where(PatientDevice.patient_id == patient_id)
+        .order_by(PatientDevice.last_used_at.desc().nulls_last())
+    )
+    devices = db.execute(stmt).scalars().all()
+
+    app_installations = [
+        PatientDeviceResponse(
+            id=d.id,
+            platform=d.platform,
+            device_name=d.device_name,
+            app_version=d.app_version,
+            is_active=d.is_active,
+            last_used_at=d.last_used_at,
+            created_at=d.created_at,
+        )
+        for d in devices
+    ]
+
+    return ConnectedDevicesResponse(
+        wearables=wearables,
+        app_installations=app_installations,
     )

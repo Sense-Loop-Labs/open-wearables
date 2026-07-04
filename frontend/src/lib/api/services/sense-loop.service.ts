@@ -65,6 +65,11 @@ import type {
   ValueSetItem,
   VitalsHistoryResponse,
   VitalsQueryParams,
+  WorkoutsHistoryResponse,
+  WorkoutsQueryParams,
+  SleepHistoryResponse,
+  SleepQueryParams,
+  ConnectedDevicesResponse,
   PatientQuestionnaire,
   PatientQuestionnaireList,
   QuestionnaireResponseDetail,
@@ -233,6 +238,41 @@ export const slPatientsService = {
       {
         method: 'GET',
         params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getWorkouts(
+    id: string,
+    params?: WorkoutsQueryParams
+  ): Promise<WorkoutsHistoryResponse> {
+    return slApiClient.request<WorkoutsHistoryResponse>(
+      `${SL_BASE}/patients/${id}/workouts`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getSleep(
+    id: string,
+    params?: SleepQueryParams
+  ): Promise<SleepHistoryResponse> {
+    return slApiClient.request<SleepHistoryResponse>(
+      `${SL_BASE}/patients/${id}/sleep`,
+      {
+        method: 'GET',
+        params: params as Record<string, string | number | boolean>,
+      }
+    );
+  },
+
+  async getDevices(id: string): Promise<ConnectedDevicesResponse> {
+    return slApiClient.request<ConnectedDevicesResponse>(
+      `${SL_BASE}/patients/${id}/devices`,
+      {
+        method: 'GET',
       }
     );
   },

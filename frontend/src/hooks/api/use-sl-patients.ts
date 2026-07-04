@@ -12,7 +12,9 @@ import type {
   PatientCreate,
   PatientQueryParams,
   PatientUpdate,
+  SleepQueryParams,
   VitalsQueryParams,
+  WorkoutsQueryParams,
 } from '@/lib/api/types/sense-loop';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
 import { queryKeys } from '@/lib/query/keys';
@@ -139,5 +141,32 @@ export function useSlPatientVitals(patientId: string, params?: VitalsQueryParams
     queryFn: () => slPatientsService.getVitals(patientId, params),
     enabled: !!patientId,
     staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+export function useSlPatientWorkouts(patientId: string, params?: WorkoutsQueryParams) {
+  return useQuery({
+    queryKey: queryKeys.sl.patients.workouts(patientId, params),
+    queryFn: () => slPatientsService.getWorkouts(patientId, params),
+    enabled: !!patientId,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+export function useSlPatientSleep(patientId: string, params?: SleepQueryParams) {
+  return useQuery({
+    queryKey: queryKeys.sl.patients.sleep(patientId, params),
+    queryFn: () => slPatientsService.getSleep(patientId, params),
+    enabled: !!patientId,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+export function useSlPatientDevices(patientId: string) {
+  return useQuery({
+    queryKey: queryKeys.sl.patients.devices(patientId),
+    queryFn: () => slPatientsService.getDevices(patientId),
+    enabled: !!patientId,
+    staleTime: 60 * 1000, // 1 minute
   });
 }

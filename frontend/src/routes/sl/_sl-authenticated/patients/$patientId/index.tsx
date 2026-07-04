@@ -38,7 +38,10 @@ import {
   useDischargePatient,
   useGenerateActivationCode,
   useSlPatient,
+  useSlPatientDevices,
+  useSlPatientSleep,
   useSlPatientVitals,
+  useSlPatientWorkouts,
   useUpdateSlPatient,
 } from '@/hooks/api/use-sl-patients';
 import {
@@ -61,8 +64,10 @@ import type {
   Patient,
   PatientSummary,
   PatientUpdate,
+  SleepReading,
   VitalReading,
   VitalType,
+  WorkoutReading,
   QuestionnaireAnswer,
 } from '@/lib/api/types/sense-loop';
 import { getSlCurrentOrgId } from '@/lib/auth/sl-session';
@@ -271,7 +276,7 @@ function SlPatientDetailPage() {
         </TabsContent>
 
         <TabsContent value="devices">
-          <DevicesSection />
+          <DevicesSection patientId={patientId} />
         </TabsContent>
 
         <TabsContent value="care-plan">
@@ -418,7 +423,8 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-const VITAL_TYPE_LABELS: Record<VitalType, string> = {
+// Vital types to show as tabs (excluding steps - use Workouts/Sleep instead)
+const VITAL_TYPE_LABELS: Record<Exclude<VitalType, 'steps'>, string> = {
   heart_rate: 'Heart Rate',
   blood_pressure: 'Blood Pressure',
   spo2: 'SpO2',
@@ -427,6 +433,8 @@ const VITAL_TYPE_LABELS: Record<VitalType, string> = {
   hrv: 'HRV',
 };
 
+type ObservationTab = 'all' | Exclude<VitalType, 'steps'> | 'sleep' | 'workouts';
+
 function VitalsSection({
   patientId,
   summary,
@@ -434,21 +442,41 @@ function VitalsSection({
   patientId: string;
   summary?: PatientSummary;
 }) {
-  const [activeTab, setActiveTab] = useState<'all' | VitalType>('all');
+  const [activeTab, setActiveTab] = useState<ObservationTab>('all');
   const [page, setPage] = useState(1);
 
-  // Fetch vitals based on active tab
+  const isSpecialTab = activeTab === 'workouts' || activeTab === 'sleep';
+
+  // Fetch vitals based on active tab (only when not on special tabs)
   const vitalsParams = {
-    vital_type: activeTab === 'all' ? undefined : activeTab,
+    vital_type: activeTab === 'all' || isSpecialTab ? undefined : activeTab,
     aggregate_hr: activeTab === 'all', // Aggregate HR in "all" view
     page,
     page_size: 50,
   };
 
-  const { data: vitalsData, isLoading } = useSlPatientVitals(
+  const { data: vitalsData, isLoading: vitalsLoading } = useSlPatientVitals(
     patientId,
-    vitalsParams
+    !isSpecialTab ? vitalsParams : undefined
   );
+
+  // Fetch workouts when on workouts tab
+  const { data: workoutsData, isLoading: workoutsLoading } = useSlPatientWorkouts(
+    patientId,
+    activeTab === 'workouts' ? { page, page_size: 50 } : undefined
+  );
+
+  // Fetch sleep when on sleep tab
+  const { data: sleepData, isLoading: sleepLoading } = useSlPatientSleep(
+    patientId,
+    activeTab === 'sleep' ? { page, page_size: 50 } : undefined
+  );
+
+  const isLoading = activeTab === 'workouts'
+    ? workoutsLoading
+    : activeTab === 'sleep'
+    ? sleepLoading
+    : vitalsLoading;
 
   // Reset page when tab changes
   useEffect(() => {
@@ -463,6 +491,188 @@ function VitalsSection({
       return `${reading.value}/${reading.value_secondary}`;
     }
     return String(reading.value);
+  };
+
+  const formatDistance = (meters: number | null): string => {
+    if (!meters) return '-';
+    const miles = meters / 1609.34;
+    return `${miles.toFixed(2)} mi`;
+  };
+
+  const formatDuration = (minutes: number): string => {
+    if (minutes < 60) return `${minutes}min`;
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+  };
+
+  const renderWorkoutsTable = (workouts: WorkoutReading[]) => {
+    if (workouts.length === 0) {
+      return (
+        <div className="sl-card">
+          <div className="sl-no-data">
+            <Activity className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
+            <p className="text-[var(--sl-text-muted)]">
+              No workouts recorded yet.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="sl-table-container">
+        <table className="sl-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Distance</th>
+              <th>Calories</th>
+              <th>Heart Rate</th>
+              <th>Date & Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {workouts.map((workout) => (
+              <tr key={workout.id}>
+                <td className="text-[var(--sl-text-primary)] font-medium capitalize">
+                  {workout.workout_type}
+                </td>
+                <td>{formatDuration(workout.duration_minutes)}</td>
+                <td>{formatDistance(workout.distance_meters)}</td>
+                <td>{workout.calories ? `${Math.round(workout.calories)} cal` : '-'}</td>
+                <td>
+                  {workout.heart_rate_avg && workout.heart_rate_max
+                    ? `${workout.heart_rate_avg} / ${workout.heart_rate_max} bpm`
+                    : workout.heart_rate_avg
+                    ? `${workout.heart_rate_avg} bpm avg`
+                    : '-'}
+                </td>
+                <td>{formatDateTime(workout.start_time)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Pagination */}
+        {workoutsData && workoutsData.pages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <span className="text-sm text-[var(--sl-text-muted)]">
+              Page {workoutsData.page} of {workoutsData.pages} ({workoutsData.total}{' '}
+              workouts)
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPage((p) => Math.min(workoutsData.pages, p + 1))
+                }
+                disabled={page === workoutsData.pages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSleepTable = (sleepRecords: SleepReading[]) => {
+    if (sleepRecords.length === 0) {
+      return (
+        <div className="sl-card">
+          <div className="sl-no-data">
+            <Activity className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
+            <p className="text-[var(--sl-text-muted)]">
+              No sleep data recorded yet.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="sl-table-container">
+        <table className="sl-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Total</th>
+              <th>REM</th>
+              <th>Deep</th>
+              <th>Light</th>
+              <th>Awake</th>
+              <th>Efficiency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sleepRecords.map((sleep) => (
+              <tr key={sleep.id}>
+                <td className="text-[var(--sl-text-primary)] font-medium">
+                  {formatDateTime(sleep.end_time).split(',')[0]}
+                  {sleep.is_nap && (
+                    <span className="ml-2 text-xs text-[var(--sl-text-muted)]">
+                      (nap)
+                    </span>
+                  )}
+                </td>
+                <td>{sleep.total_minutes ? formatDuration(sleep.total_minutes) : '-'}</td>
+                <td>{sleep.rem_minutes ? `${sleep.rem_minutes}m` : '-'}</td>
+                <td>{sleep.deep_minutes ? `${sleep.deep_minutes}m` : '-'}</td>
+                <td>{sleep.light_minutes ? `${sleep.light_minutes}m` : '-'}</td>
+                <td>{sleep.awake_minutes ? `${sleep.awake_minutes}m` : '-'}</td>
+                <td>
+                  {sleep.efficiency_percent
+                    ? `${sleep.efficiency_percent.toFixed(0)}%`
+                    : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Pagination */}
+        {sleepData && sleepData.pages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <span className="text-sm text-[var(--sl-text-muted)]">
+              Page {sleepData.page} of {sleepData.pages} ({sleepData.total}{' '}
+              records)
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPage((p) => Math.min(sleepData.pages, p + 1))
+                }
+                disabled={page === sleepData.pages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderVitalsTable = (readings: VitalReading[]) => {
@@ -494,7 +704,7 @@ function VitalsSection({
             {readings.map((reading, idx) => (
               <tr key={idx}>
                 <td className="text-[var(--sl-text-primary)] font-medium">
-                  {VITAL_TYPE_LABELS[reading.vital_type]}
+                  {VITAL_TYPE_LABELS[reading.vital_type as Exclude<VitalType, 'steps'>] || reading.vital_type}
                   {reading.is_aggregated && (
                     <span className="ml-2 text-xs text-[var(--sl-text-muted)]">
                       (hourly avg)
@@ -574,7 +784,7 @@ function VitalsSection({
         >
           All
         </button>
-        {(Object.keys(VITAL_TYPE_LABELS) as VitalType[]).map((vt) => (
+        {(Object.keys(VITAL_TYPE_LABELS) as Exclude<VitalType, 'steps'>[]).map((vt) => (
           <button
             key={vt}
             onClick={() => setActiveTab(vt)}
@@ -587,6 +797,26 @@ function VitalsSection({
             {VITAL_TYPE_LABELS[vt]}
           </button>
         ))}
+        <button
+          onClick={() => setActiveTab('sleep')}
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'sleep'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          Sleep
+        </button>
+        <button
+          onClick={() => setActiveTab('workouts')}
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'workouts'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          Workouts
+        </button>
       </div>
 
       {/* Loading state */}
@@ -597,7 +827,13 @@ function VitalsSection({
       )}
 
       {/* Vitals table */}
-      {!isLoading && vitalsData && renderVitalsTable(vitalsData.items)}
+      {!isLoading && !isSpecialTab && vitalsData && renderVitalsTable(vitalsData.items)}
+
+      {/* Sleep table */}
+      {!isLoading && activeTab === 'sleep' && sleepData && renderSleepTable(sleepData.items)}
+
+      {/* Workouts table */}
+      {!isLoading && activeTab === 'workouts' && workoutsData && renderWorkoutsTable(workoutsData.items)}
     </div>
   );
 }
@@ -1113,13 +1349,136 @@ function QuestionWithAnswer({
   );
 }
 
-function DevicesSection() {
-  return (
-    <div className="sl-card">
-      <div className="sl-no-data">
-        <Smartphone className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
-        <p className="text-[var(--sl-text-muted)]">No connected devices.</p>
+function DevicesSection({ patientId }: { patientId: string }) {
+  const { data, isLoading } = useSlPatientDevices(patientId);
+
+  if (isLoading) {
+    return (
+      <div className="sl-card">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--sl-text-muted)]" />
+        </div>
       </div>
+    );
+  }
+
+  const wearables = data?.wearables ?? [];
+  const appInstallations = data?.app_installations ?? [];
+
+  if (wearables.length === 0 && appInstallations.length === 0) {
+    return (
+      <div className="sl-card">
+        <div className="sl-no-data">
+          <Smartphone className="h-12 w-12 mx-auto text-[var(--sl-text-muted)] mb-4" />
+          <p className="text-[var(--sl-text-muted)]">No connected devices.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Helper to get icon for device type/provider
+  const getDeviceIcon = (provider: string, deviceType: string | null) => {
+    if (deviceType === 'scale') return '⚖️';
+    if (provider === 'apple_health_kit') return '⌚';
+    if (provider === 'fitbit') return '⌚';
+    if (provider === 'garmin') return '⌚';
+    return '📱';
+  };
+
+  // Helper to format provider name
+  const formatProvider = (provider: string) => {
+    const providerNames: Record<string, string> = {
+      apple_health_kit: 'Apple Health',
+      fitbit: 'Fitbit',
+      garmin: 'Garmin',
+      withings: 'Withings',
+      oura: 'Oura',
+    };
+    return providerNames[provider] || provider;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Wearable Devices */}
+      {wearables.length > 0 && (
+        <div className="sl-card">
+          <h3 className="text-lg font-semibold text-[var(--sl-text-primary)] mb-4">
+            Wearable Devices
+          </h3>
+          <div className="space-y-3">
+            {wearables.map((device) => (
+              <div
+                key={device.id}
+                className="flex items-center justify-between p-4 rounded-lg bg-[var(--sl-surface-secondary)]"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="text-2xl">
+                    {getDeviceIcon(device.provider, device.device_type)}
+                  </div>
+                  <div>
+                    <p className="font-medium text-[var(--sl-text-primary)]">
+                      {device.name}
+                    </p>
+                    <p className="text-sm text-[var(--sl-text-muted)]">
+                      {formatProvider(device.provider)}
+                      {device.device_model && ` • ${device.device_model}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  {device.last_data_at && (
+                    <p className="text-sm text-[var(--sl-text-muted)]">
+                      Last data: {new Date(device.last_data_at).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* App Installations */}
+      {appInstallations.length > 0 && (
+        <div className="sl-card">
+          <h3 className="text-lg font-semibold text-[var(--sl-text-primary)] mb-4">
+            App Installations
+          </h3>
+          <div className="space-y-3">
+            {appInstallations.map((device) => (
+              <div
+                key={device.id}
+                className="flex items-center justify-between p-4 rounded-lg bg-[var(--sl-surface-secondary)]"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="p-2 rounded-full bg-[var(--sl-primary)]/10">
+                    <Smartphone className="h-5 w-5 text-[var(--sl-primary)]" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-[var(--sl-text-primary)]">
+                      {device.device_name || `${device.platform.charAt(0).toUpperCase() + device.platform.slice(1)} Device`}
+                    </p>
+                    <p className="text-sm text-[var(--sl-text-muted)]">
+                      {device.platform.toUpperCase()}
+                      {device.app_version && ` • v${device.app_version}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${device.is_active ? 'text-green-500' : 'text-[var(--sl-text-muted)]'}`}>
+                    {device.is_active ? 'Active' : 'Inactive'}
+                  </p>
+                  {device.last_used_at && (
+                    <p className="text-xs text-[var(--sl-text-muted)]">
+                      Last used: {new Date(device.last_used_at).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

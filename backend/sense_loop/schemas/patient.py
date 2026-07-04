@@ -162,3 +162,92 @@ class VitalsHistoryResponse(BaseModel):
     page_size: int
     pages: int
     vital_type: str | None = None  # Filter applied, None = all
+
+
+class PatientDeviceResponse(BaseModel):
+    """Patient device response - for app installations (push notifications)."""
+
+    id: UUID
+    platform: str
+    device_name: str | None = None
+    app_version: str | None = None
+    is_active: bool
+    last_used_at: datetime | None = None
+    created_at: datetime
+
+
+class WearableDeviceResponse(BaseModel):
+    """Wearable device that sends health data."""
+
+    id: UUID
+    name: str  # e.g., "Mike's Apple Watch"
+    device_model: str | None = None  # e.g., "Apple Watch Series 8"
+    device_type: str | None = None  # e.g., "watch", "scale"
+    provider: str  # e.g., "apple_health_kit", "fitbit"
+    last_data_at: datetime | None = None
+
+
+class ConnectedDevicesResponse(BaseModel):
+    """Combined response with wearables and app installations."""
+
+    wearables: list[WearableDeviceResponse]
+    app_installations: list[PatientDeviceResponse]
+
+
+class PatientDeviceListResponse(BaseModel):
+    """List of patient devices."""
+
+    items: list[PatientDeviceResponse]
+    total: int
+
+
+class WorkoutReading(BaseModel):
+    """A single workout record."""
+
+    id: UUID
+    workout_type: str
+    start_time: datetime
+    end_time: datetime
+    duration_minutes: int
+    distance_meters: float | None = None
+    calories: float | None = None
+    heart_rate_avg: int | None = None
+    heart_rate_max: int | None = None
+    steps: int | None = None
+    source: str | None = None
+
+
+class WorkoutsHistoryResponse(BaseModel):
+    """Historical workouts response with pagination."""
+
+    items: list[WorkoutReading]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class SleepReading(BaseModel):
+    """A single sleep record."""
+
+    id: UUID
+    start_time: datetime
+    end_time: datetime
+    total_minutes: int | None = None
+    rem_minutes: int | None = None
+    deep_minutes: int | None = None
+    light_minutes: int | None = None
+    awake_minutes: int | None = None
+    efficiency_percent: float | None = None
+    is_nap: bool = False
+    source: str | None = None
+
+
+class SleepHistoryResponse(BaseModel):
+    """Historical sleep response with pagination."""
+
+    items: list[SleepReading]
+    total: int
+    page: int
+    page_size: int
+    pages: int

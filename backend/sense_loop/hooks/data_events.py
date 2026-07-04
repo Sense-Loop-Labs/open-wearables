@@ -130,7 +130,8 @@ def _process_sample(
     provider: str | None,
 ) -> None:
     """Process a single vital sample for alert evaluation."""
-    from sense_loop.services.alert_engine import AlertEngine
+    from sense_loop.services.alert_engine import AlertAction, AlertEngine
+    from sense_loop.services.summary_service import SummaryService
 
     # Skip heart rate - it uses activity-aware analysis in hr_anomaly_service instead
     # This prevents duplicate alerts from individual readings without activity context
@@ -149,13 +150,18 @@ def _process_sample(
 
     # Run alert evaluation
     engine = AlertEngine(db)
-    engine.evaluate_observation(
+    result = engine.evaluate_observation(
         patient_id=patient.id,
         vital_type=vital_type,
         value=float(value),
         observed_at=timestamp or datetime.utcnow(),
         provider=provider,
     )
+
+    # Update patient summary alert counts if an alert was created, updated, or resolved
+    if result.action in (AlertAction.CREATED, AlertAction.UPDATED, AlertAction.RESOLVED):
+        summary_service = SummaryService(db)
+        summary_service.update_alert_counts(patient.id)
 
 
 def _update_activity_summary(
@@ -196,9 +202,15 @@ def _update_activity_summary(
                 active_threshold=30,  # 30 steps/minute = active
             )
 
-            if activity_data and today.isoformat() in activity_data:
-                day_data = activity_data[today.isoformat()]
-                active_minutes = day_data.get("active_minutes", 0)
+            # activity_data is a list of ActiveMinutesResult TypedDicts
+            # Find today's data in the list
+            day_data = next(
+                (d for d in activity_data if d["activity_date"] == today),
+                None
+            ) if activity_data else None
+
+            if day_data:
+                active_minutes = day_data["active_minutes"]
 
                 # Also sum up steps from samples
                 total_steps = sum(s.get("value", 0) for s in samples if s.get("value"))

@@ -1,5 +1,5 @@
 import type { HealthDataParams, UserQueryParams } from '../api/types';
-import type { AlertQueryParams, PatientQueryParams, VitalsQueryParams } from '../api/types/sense-loop';
+import type { AlertQueryParams, PatientQueryParams, SleepQueryParams, VitalsQueryParams, WorkoutsQueryParams } from '../api/types/sense-loop';
 
 export const queryKeys = {
   auth: {
@@ -213,6 +213,12 @@ export const queryKeys = {
       detail: (id: string) => [...queryKeys.sl.patients.details(), id] as const,
       vitals: (id: string, params?: VitalsQueryParams) =>
         [...queryKeys.sl.patients.detail(id), 'vitals', params] as const,
+      workouts: (id: string, params?: WorkoutsQueryParams) =>
+        [...queryKeys.sl.patients.detail(id), 'workouts', params] as const,
+      sleep: (id: string, params?: SleepQueryParams) =>
+        [...queryKeys.sl.patients.detail(id), 'sleep', params] as const,
+      devices: (id: string) =>
+        [...queryKeys.sl.patients.detail(id), 'devices'] as const,
     },
 
     // Alerts
