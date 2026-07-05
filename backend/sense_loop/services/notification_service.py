@@ -19,12 +19,19 @@ logger = logging.getLogger(__name__)
 # Firebase app singleton
 _firebase_app = None
 
+# Email provider singleton
+_email_provider = None
 
-def _get_sendgrid_client():
-    """Get SendGrid client, lazily imported."""
-    from sendgrid import SendGridAPIClient
 
-    return SendGridAPIClient(sl_settings.sendgrid_api_key.get_secret_value())
+def _get_email_provider():
+    """Get email provider, lazily initialized."""
+    global _email_provider
+
+    if _email_provider is None:
+        from sense_loop.services.email_providers import get_email_provider
+
+        _email_provider = get_email_provider()
+    return _email_provider
 
 
 def _init_firebase():
@@ -154,10 +161,6 @@ class NotificationService:
         self, alert: Alert, care_team: list[Practitioner]
     ) -> None:
         """Send email notifications to care team."""
-        if not sl_settings.sendgrid_api_key:
-            logger.warning("SendGrid API key not configured, skipping email")
-            return
-
         for practitioner in care_team:
             if not practitioner.email:
                 continue
@@ -462,7 +465,7 @@ class NotificationService:
         body: str,
         html_body: str | None = None,
     ) -> None:
-        """Send an email via SendGrid.
+        """Send an email via the configured email provider.
 
         Args:
             to_email: Recipient email address
@@ -470,49 +473,23 @@ class NotificationService:
             body: Plain text body (fallback)
             html_body: HTML body (optional, preferred if provided)
         """
-        if not sl_settings.sendgrid_api_key:
-            logger.warning("SendGrid API key not configured, skipping email to %s", to_email)
-            return
-
-        from sendgrid.helpers.mail import Email, Content, Mail, To
+        from sense_loop.services.email_providers import EmailMessage
 
         try:
-            sg = _get_sendgrid_client()
+            provider = _get_email_provider()
 
-            from_email = Email(
-                email=sl_settings.notification_from_email,
-                name=sl_settings.notification_from_name,
-            )
-            to_email_obj = To(to_email)
-
-            # Build message with both plain text and HTML
-            message = Mail(
-                from_email=from_email,
-                to_emails=to_email_obj,
+            message = EmailMessage(
+                to_email=to_email,
                 subject=subject,
+                html_content=html_body or body,
+                plain_content=body,
             )
 
-            # Add plain text content
-            message.add_content(Content("text/plain", body))
+            result = provider.send(message)
 
-            # Add HTML content if provided
-            if html_body:
-                message.add_content(Content("text/html", html_body))
-
-            response = sg.send(message)
-
-            if response.status_code >= 200 and response.status_code < 300:
-                logger.info(
-                    "Email sent successfully to %s (status: %s)",
-                    to_email,
-                    response.status_code,
-                )
-            else:
-                logger.error(
-                    "SendGrid returned non-success status %s for email to %s",
-                    response.status_code,
-                    to_email,
-                )
+            if not result.success:
+                logger.error("Failed to send email to %s: %s", to_email, result.error)
+                raise RuntimeError(f"Email send failed: {result.error}")
 
         except Exception as e:
             logger.error("Failed to send email to %s: %s", to_email, e)

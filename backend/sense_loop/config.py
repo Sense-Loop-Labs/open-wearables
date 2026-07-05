@@ -56,8 +56,17 @@ class SenseLoopSettings(BaseSettings):
     # Frontend app URL (for invite links, password reset, etc.)
     app_base_url: str = "http://localhost:3002"
 
-    # Notification settings (SendGrid)
+    # Email provider configuration
+    # "sendgrid" or "ses"
+    email_provider: str = "sendgrid"
+
+    # SendGrid settings (if email_provider=sendgrid)
     sendgrid_api_key: SecretStr | None = None
+
+    # AWS SES settings (if email_provider=ses)
+    ses_region: str = "us-east-1"
+
+    # Common email settings
     notification_from_email: str = "noreply@senselooplabs.com"
     notification_from_name: str = "Sense Loop"
 

@@ -320,7 +320,10 @@ export default $config({
 
       // Sense Loop
       SL_FIREBASE_CREDENTIALS_JSON: slFirebaseCredentials.value,
-      SL_SENDGRID_API_KEY: slSendgridApiKey.value,
+      SL_EMAIL_PROVIDER: "ses",
+      SL_SES_REGION: "us-west-2",
+      SL_NOTIFICATION_FROM_EMAIL: "hello@senselooplabs.com",
+      SL_SENDGRID_API_KEY: slSendgridApiKey.value, // Kept for fallback
       SL_PUSH_NOTIFICATIONS_ENABLED: "true",
       SL_ADMIN_PASSWORD: slAdminPassword.value,
       SL_APP_BASE_URL: isProduction
