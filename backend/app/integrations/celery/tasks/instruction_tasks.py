@@ -191,7 +191,11 @@ def send_daily_task_summaries(self) -> dict:
     try:
         from sqlalchemy import select
         from sense_loop.models import Patient, PatientInstructionPlan
-        from sense_loop.services import TaskCompletionService, TaskNotificationService
+        from sense_loop.services import (
+            TaskCompletionService,
+            TaskNotificationService,
+            NotificationService,
+        )
 
         # Find patients with active plans
         stmt = (
@@ -206,7 +210,8 @@ def send_daily_task_summaries(self) -> dict:
         patients = list(db.execute(stmt).scalars().all())
 
         task_service = TaskCompletionService(db)
-        notification_service = TaskNotificationService(db)
+        notif_service = NotificationService(db)
+        notification_service = TaskNotificationService(db, notification_service=notif_service)
 
         today = date.today()
         summaries_sent = 0

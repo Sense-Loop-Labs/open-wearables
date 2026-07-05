@@ -10,9 +10,6 @@ declare module "sst" {
       "type": "sst.aws.Service"
       "url": string
     }
-    "Beat": {
-      "type": "sst.aws.Service"
-    }
     "FitbitClientId": {
       "type": "sst.sst.Secret"
       "value": string
@@ -49,7 +46,7 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Worker": {
+    "WorkerBeat": {
       "type": "sst.aws.Service"
     }
   }

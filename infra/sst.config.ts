@@ -408,6 +408,12 @@ export default $config({
           dockerfile: "Dockerfile",
         },
         command: ["scripts/start/worker-beat.sh"],
+        permissions: [
+          {
+            actions: ["ses:SendEmail", "ses:SendRawEmail"],
+            resources: ["*"],
+          },
+        ],
         environment: getSharedEnv(),
         logging: {
           retention: logRetention,
@@ -424,6 +430,12 @@ export default $config({
           dockerfile: "Dockerfile",
         },
         command: ["scripts/start/worker.sh"],
+        permissions: [
+          {
+            actions: ["ses:SendEmail", "ses:SendRawEmail"],
+            resources: ["*"],
+          },
+        ],
         environment: getSharedEnv(),
         scaling: isProduction
           ? { min: 2, max: 10 }
