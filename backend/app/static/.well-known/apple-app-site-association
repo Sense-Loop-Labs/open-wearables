@@ -1,0 +1,25 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "E9JYG4VXMK.com.sfcoder.patientrecovery",
+        "paths": [
+          "/task/*",
+          "/tasks",
+          "/tasks/*",
+          "/checkin",
+          "/checkin/*",
+          "/questionnaire/*",
+          "/dashboard",
+          "/careplan"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "E9JYG4VXMK.com.sfcoder.patientrecovery"
+    ]
+  }
+}

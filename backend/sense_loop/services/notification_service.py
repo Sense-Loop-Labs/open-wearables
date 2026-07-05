@@ -339,10 +339,24 @@ class NotificationService:
             if not patient.email:
                 logger.warning("Patient %s has no email address", patient_id)
                 return False
+
+            # Build deep link URL from data payload
+            deep_link_url = None
+            deep_link_text = "Open in App"
+            if data:
+                deep_link_url = self._build_deep_link_url(data)
+                notification_type = data.get("type", "")
+                if notification_type == "daily_summary":
+                    deep_link_text = "View Today's Tasks"
+                elif "task" in notification_type:
+                    deep_link_text = "View Task"
+
             await self.send_patient_email(
                 patient=patient,
                 subject=title,
                 body=body,
+                deep_link_url=deep_link_url,
+                deep_link_text=deep_link_text,
             )
             return True
 
@@ -366,6 +380,8 @@ class NotificationService:
         patient: "Patient",
         subject: str,
         body: str,
+        deep_link_url: str | None = None,
+        deep_link_text: str = "Open in App",
     ) -> None:
         """Send email to a patient.
 
@@ -373,6 +389,8 @@ class NotificationService:
             patient: Patient model instance
             subject: Email subject
             body: Email body text
+            deep_link_url: Optional deep link URL for "Open in App" button
+            deep_link_text: Text for the deep link button
         """
         if not patient.email:
             logger.warning("Patient %s has no email address", patient.id)
@@ -383,6 +401,8 @@ class NotificationService:
             patient_name=patient.first_name,
             subject=subject,
             body=body,
+            deep_link_url=deep_link_url,
+            deep_link_text=deep_link_text,
         )
 
         await self._send_email(
@@ -397,9 +417,27 @@ class NotificationService:
         patient_name: str,
         subject: str,
         body: str,
+        deep_link_url: str | None = None,
+        deep_link_text: str = "Open in App",
     ) -> str:
         """Build HTML email for patient notifications."""
         from html import escape
+
+        # Build the CTA button section if deep link is provided
+        cta_section = ""
+        if deep_link_url:
+            cta_section = f"""
+                            <!-- CTA Button -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto 30px;">
+                                <tr>
+                                    <td style="border-radius: 6px; background-color: #7c3aed;">
+                                        <a href="{escape(deep_link_url)}" target="_blank" style="display: inline-block; padding: 14px 32px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                            {escape(deep_link_text)}
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+"""
 
         return f"""
 <!DOCTYPE html>
@@ -429,6 +467,7 @@ class NotificationService:
                             <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.6; color: #4a4a4a;">
                                 {escape(body)}
                             </p>
+{cta_section}
                         </td>
                     </tr>
                     <!-- Footer -->
@@ -499,6 +538,32 @@ class NotificationService:
         """Send an SMS via Twilio."""
         # TODO: Implement actual Twilio integration
         logger.info("Would send SMS to %s: %s", to_phone, message[:50])
+
+    def _build_deep_link_url(self, data: dict) -> str | None:
+        """Build deep link URL from notification data payload.
+
+        Args:
+            data: Notification data payload containing type and IDs
+
+        Returns:
+            Deep link URL or None if no deep link is applicable
+        """
+        base_url = sl_settings.app_deep_link_base_url
+        if not base_url:
+            # Default to staging API URL for deep links
+            base_url = "https://wearables.staging.senselooplabs.com"
+
+        notification_type = data.get("type", "")
+
+        if notification_type in ("task_reminder", "task_overdue", "task_confirmation", "task_success"):
+            task_id = data.get("task_id")
+            if task_id:
+                return f"{base_url}/task/{task_id}"
+
+        elif notification_type == "daily_summary":
+            return f"{base_url}/tasks"
+
+        return None
 
     def _format_alert_email(self, alert: Alert, practitioner: Practitioner) -> str:
         """Format alert as email body."""

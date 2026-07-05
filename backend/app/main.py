@@ -59,6 +59,11 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     api.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# Mount .well-known for Universal Links (iOS deep linking)
+well_known_dir = static_dir / ".well-known"
+if well_known_dir.exists():
+    api.mount("/.well-known", StaticFiles(directory=str(well_known_dir)), name="well-known")
+
 
 @api.get("/")
 async def root() -> dict[str, str]:

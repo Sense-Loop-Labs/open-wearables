@@ -207,10 +207,9 @@ class TaskNotificationService:
         if confirmation_count > 0:
             return None
 
-        prompt = task.confirmation_prompt or f"Did you complete: {task.title}?"
-
-        title = "Task Confirmation"
-        body = prompt
+        # Note: Generic content for HIPAA compliance - no PHI in push notifications
+        title = "Action Needed"
+        body = "Please confirm your task. Tap to respond."
 
         if self.notification_service:
             await self.notification_service.send_patient_notification(
@@ -474,35 +473,40 @@ class TaskNotificationService:
         return log
 
     def _build_reminder_body(self, task: PatientInstructionTask) -> str:
-        """Build reminder notification body."""
-        time_str = task.scheduled_time_local or "now"
-        return f"{task.title} is scheduled for {time_str}"
+        """Build reminder notification body.
+
+        Note: Push notification content is kept generic to avoid PHI exposure
+        since FCM is not HIPAA-eligible. Detailed task info is shown only
+        after the user opens the app and authenticates.
+        """
+        return "You have an upcoming task. Tap to view details."
 
     def _build_overdue_body(self, task: PatientInstructionTask) -> str:
-        """Build overdue notification body."""
-        return f"You have an overdue task: {task.title}"
+        """Build overdue notification body.
+
+        Note: Generic content for HIPAA compliance - no PHI in push notifications.
+        """
+        return "You have an overdue item. Tap to view."
 
     def _build_success_body(
         self,
         task: PatientInstructionTask,
         data_value: str | None,
     ) -> str:
-        """Build success notification body."""
-        if data_value:
-            return f"Great job! {task.title} completed with reading: {data_value}"
-        return f"Great job! {task.title} has been marked complete."
+        """Build success notification body.
+
+        Note: Generic content for HIPAA compliance - no health data in push notifications.
+        """
+        return "Task completed! Tap to see details."
 
     def _build_daily_summary_body(
         self, tasks: list[PatientInstructionTask]
     ) -> str:
-        """Build daily summary notification body."""
-        if len(tasks) == 1:
-            return f"You have 1 task today: {tasks[0].title}"
+        """Build daily summary notification body.
 
-        task_titles = [t.title for t in tasks[:3]]
-        summary = ", ".join(task_titles)
-
-        if len(tasks) > 3:
-            return f"You have {len(tasks)} tasks today: {summary}, and more..."
-
-        return f"You have {len(tasks)} tasks today: {summary}"
+        Note: Generic content for HIPAA compliance - no task titles in push notifications.
+        """
+        count = len(tasks)
+        if count == 1:
+            return "You have 1 task today. Tap to view."
+        return f"You have {count} tasks today. Tap to view."

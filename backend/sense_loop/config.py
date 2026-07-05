@@ -83,6 +83,10 @@ class SenseLoopSettings(BaseSettings):
     # Enable/disable push notifications
     push_notifications_enabled: bool = True
 
+    # Deep link base URL for mobile app (Universal Links)
+    # Used in email notifications to link back to the mobile app
+    app_deep_link_base_url: str = "https://wearables.staging.senselooplabs.com"
+
     # Default alert thresholds
     default_hr_high_critical: int = 120
     default_hr_high_warning: int = 100
