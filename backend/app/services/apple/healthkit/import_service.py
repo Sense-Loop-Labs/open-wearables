@@ -115,9 +115,15 @@ class ImportService:
         request: SDKSyncRequest,
         user_id: str,
     ) -> list[HeartRateSampleCreate | StepSampleCreate | TimeSeriesSampleCreate]:
+        from collections import Counter
+
         time_series_samples: list[HeartRateSampleCreate | StepSampleCreate | TimeSeriesSampleCreate] = []
         user_uuid = UUID(user_id)
         provider = request.provider
+
+        skipped_types: Counter = Counter()
+        processed_types: Counter = Counter()
+        device_info_samples: dict[str, list[tuple[str | None, str | None]]] = {}
 
         for rjson in request.data.records:
             value = Decimal(str(rjson.value))
@@ -126,13 +132,23 @@ class ImportService:
             series_type = get_series_type_from_metric_type(record_type)
 
             if not series_type:
+                skipped_types[record_type] += 1
                 continue
+
+            processed_types[series_type.value] += 1
+
             # Convert from meters to centimeters or ratio to percentage
             if series_type in (SeriesType.height, SeriesType.body_fat_percentage):
                 value = value * 100
 
             # Extract device info
             device_model, software_version, original_source_name = extract_device_info(rjson.source)
+
+            # Track device info for debugging
+            if series_type.value not in device_info_samples:
+                device_info_samples[series_type.value] = []
+            if len(device_info_samples[series_type.value]) < 3:
+                device_info_samples[series_type.value].append((device_model, original_source_name))
 
             sample = TimeSeriesSampleCreate(
                 id=uuid4(),
@@ -155,6 +171,30 @@ class ImportService:
                     time_series_samples.append(StepSampleCreate(**sample.model_dump()))
                 case _:
                     time_series_samples.append(sample)
+
+        # Log summary
+        self.log.info(
+            "_build_statistic_bundles: processed %d records into %d samples. "
+            "breakdown: %s",
+            len(request.data.records),
+            len(time_series_samples),
+            dict(processed_types),
+        )
+        if skipped_types:
+            self.log.warning(
+                "_build_statistic_bundles: skipped %d records with unknown types: %s",
+                sum(skipped_types.values()),
+                dict(skipped_types),
+            )
+
+        # Log device info for key types
+        for series_type, samples in device_info_samples.items():
+            if series_type in ("heart_rate", "energy", "steps"):
+                self.log.info(
+                    "_build_statistic_bundles: %s device_info samples: %s",
+                    series_type,
+                    samples,
+                )
 
         return time_series_samples
 

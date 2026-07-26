@@ -552,6 +552,30 @@ aws elbv2 describe-load-balancers --query 'LoadBalancers[0].DNSName' --output te
 # Create: wearables.staging.senselooplabs.com CNAME -> <ALB DNS name>
 ```
 
+### SST Provider Upgrade Required
+
+**Error:** `Detected AWS provider upgrade from v6 to v7 - A one-time state migration is required`
+
+**Cause:** SST upgraded its AWS provider and needs to migrate the Pulumi state.
+
+**Solution:**
+```bash
+# Run refresh first to migrate state
+npx sst refresh --stage staging
+
+# Then deploy normally
+PRE_PILOT=true npx sst deploy --stage staging
+```
+
+**Note:** If you also see `Setting providers.random to true is deprecated`, update `sst.config.ts` to use explicit provider versions:
+```typescript
+providers: {
+  aws: { region: "us-west-2" },
+  random: "4.21.1",  // Instead of: random: true
+  command: "1.2.1",  // Instead of: command: true
+}
+```
+
 ---
 
 ### Database Connection Issues

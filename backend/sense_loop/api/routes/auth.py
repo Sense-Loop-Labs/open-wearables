@@ -234,6 +234,7 @@ async def patient_login(
         patient_id=patient.id,
         ow_user_id=patient.ow_user_id,
         organization_id=patient.organization_id,
+        first_name=patient.first_name,
     )
 
 

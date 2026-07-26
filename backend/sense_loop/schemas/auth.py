@@ -76,6 +76,7 @@ class LoginResponse(BaseModel):
     patient_id: UUID
     ow_user_id: UUID | None = None
     organization_id: UUID
+    first_name: str | None = None
 
 
 class RefreshTokenRequest(BaseModel):

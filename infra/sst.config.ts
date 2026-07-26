@@ -40,8 +40,8 @@ export default $config({
         aws: {
           region: "us-west-2",
         },
-        random: true,
-        command: true,
+        random: "4.21.1",
+        command: "1.2.1",
       },
     };
   },

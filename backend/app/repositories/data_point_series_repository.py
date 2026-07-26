@@ -1,4 +1,6 @@
 import contextlib
+import logging
+from collections import Counter
 from datetime import datetime, time, timedelta
 from uuid import UUID
 
@@ -8,6 +10,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError as SQLAIntegrityError
 
 from app.database import DbSession
+
+logger = logging.getLogger(__name__)
 from app.models import DataPointSeries, DataSource, DeviceTypePriority, ProviderPriority
 from app.models.series_type_definition import SeriesTypeDefinition
 from app.repositories.data_source_repository import DataSourceRepository
@@ -91,8 +95,21 @@ class DataPointSeriesRepository(
         if not creators:
             return []
 
+        # Log incoming samples by series type for debugging
+        series_type_counts = Counter(c.series_type.value for c in creators)
+        logger.info(
+            "bulk_create: received %d samples, breakdown: %s",
+            len(creators),
+            dict(series_type_counts),
+        )
+
         # 1. Resolve all data sources in batch
         identity_to_source_id = self._resolve_data_sources(db_session, creators)
+
+        logger.info(
+            "bulk_create: resolved %d unique data source identities",
+            len(identity_to_source_id),
+        )
 
         # 2. Build and execute data point batch insert
         self._insert_data_points(db_session, creators, identity_to_source_id)
@@ -119,10 +136,23 @@ class DataPointSeriesRepository(
             for c in provider_creators:
                 unique_identities.add((c.user_id, c.device_model, c.source))
 
+            logger.debug(
+                "_resolve_data_sources: provider=%s, %d creators, %d unique identities: %s",
+                provider,
+                len(provider_creators),
+                len(unique_identities),
+                list(unique_identities)[:5],  # Log first 5 for brevity
+            )
+
             batch_result = self.data_source_repo.batch_ensure_data_sources(
                 db_session, provider, user_connection_id, unique_identities
             )
             identity_to_source_id.update(batch_result)
+
+            logger.debug(
+                "_resolve_data_sources: batch_ensure returned %d mappings",
+                len(batch_result),
+            )
 
         return identity_to_source_id
 
@@ -138,14 +168,30 @@ class DataPointSeriesRepository(
         of 65,535 parameters per query. With 6 fields per record, we batch at ~10k records.
         """
         values_list = []
+        skipped_by_type: Counter = Counter()
+        added_by_type: Counter = Counter()
+
         for creator in creators:
             identity: DataSourceIdentity = (creator.user_id, creator.device_model, creator.source)
             source_id = source_map.get(identity)
 
             if not source_id:
-                # Should not happen if resolve logic is correct, but safe skip
+                # Log detailed info about skipped records
+                skipped_by_type[creator.series_type.value] += 1
+                if skipped_by_type[creator.series_type.value] <= 3:  # Log first 3 per type
+                    logger.warning(
+                        "_insert_data_points: SKIPPED record - no source_id for identity. "
+                        "series_type=%s, user_id=%s, device_model=%r, source=%r. "
+                        "Available source_map keys: %s",
+                        creator.series_type.value,
+                        creator.user_id,
+                        creator.device_model,
+                        creator.source,
+                        list(source_map.keys())[:5],
+                    )
                 continue
 
+            added_by_type[creator.series_type.value] += 1
             values_list.append(
                 {
                     "id": creator.id,
@@ -158,14 +204,37 @@ class DataPointSeriesRepository(
                 }
             )
 
+        # Log summary of skipped records
+        if skipped_by_type:
+            logger.warning(
+                "_insert_data_points: SKIPPED %d records due to missing source_id: %s",
+                sum(skipped_by_type.values()),
+                dict(skipped_by_type),
+            )
+
+        logger.info(
+            "_insert_data_points: prepared %d records for insert: %s",
+            len(values_list),
+            dict(added_by_type),
+        )
+
         if values_list:
             # Deduplicate within the batch: PostgreSQL cannot upsert the same row
             # twice in one INSERT. Keep the last value for each conflict key.
+            pre_dedup_count = len(values_list)
             deduped: dict[tuple, dict] = {}
             for v in values_list:
                 key = (v["data_source_id"], v["series_type_definition_id"], v["recorded_at"])
                 deduped[key] = v
             values_list = list(deduped.values())
+
+            if pre_dedup_count != len(values_list):
+                logger.info(
+                    "_insert_data_points: deduplication removed %d duplicates (%d -> %d)",
+                    pre_dedup_count - len(values_list),
+                    pre_dedup_count,
+                    len(values_list),
+                )
 
             for i in range(0, len(values_list), self.BATCH_INSERT_CHUNK_SIZE):
                 chunk = values_list[i : i + self.BATCH_INSERT_CHUNK_SIZE]
@@ -179,7 +248,15 @@ class DataPointSeriesRepository(
                     },
                 )
                 db_session.execute(stmt)
+                logger.info(
+                    "_insert_data_points: executed upsert for chunk %d-%d (%d records)",
+                    i,
+                    i + len(chunk),
+                    len(chunk),
+                )
             # NOTE: Caller should commit - allows batching multiple operations
+        else:
+            logger.warning("_insert_data_points: no records to insert after processing")
 
     def try_commit(self, db_session: DbSession, creation: DataPointSeries) -> DataPointSeries:
         try:

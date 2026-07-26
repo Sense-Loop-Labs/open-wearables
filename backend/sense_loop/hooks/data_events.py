@@ -150,7 +150,7 @@ def _process_sample(
 
     # Run alert evaluation
     engine = AlertEngine(db)
-    result = engine.evaluate_observation(
+    result = engine.evaluate_observation_detailed(
         patient_id=patient.id,
         vital_type=vital_type,
         value=float(value),
