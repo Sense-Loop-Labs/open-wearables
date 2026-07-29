@@ -238,6 +238,134 @@ async def patient_login(
     )
 
 
+@router.post("/patient/forgot-password", response_model=ForgotPasswordResponse)
+async def patient_forgot_password(
+    request: ForgotPasswordRequest,
+    db: DbSession,
+):
+    """Initiate password reset for a patient."""
+    import secrets
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+
+    from sense_loop.models import Patient
+    from sense_loop.services import NotificationService
+
+    # Find patient by email
+    stmt = select(Patient).where(Patient.email == request.email.lower())
+    patient = db.execute(stmt).scalar_one_or_none()
+
+    if not patient:
+        # Don't reveal if email exists - always return success
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account exists with this email, you will receive a password reset link.",
+        )
+
+    if not patient.is_active:
+        # Don't reveal account status
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account exists with this email, you will receive a password reset link.",
+        )
+
+    # Generate reset token
+    token = secrets.token_urlsafe(32)
+    patient.password_reset_token = token
+    patient.password_reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+
+    # Build reset URL for the mobile app (deep link)
+    reset_url = f"senseloop://reset-password?token={token}"
+
+    # Send password reset email
+    try:
+        notification_service = NotificationService(db)
+        await notification_service.send_password_reset_email(
+            email=patient.email,
+            name=patient.first_name,
+            reset_url=reset_url,
+        )
+    except Exception as e:
+        # Log but don't fail - user can request again
+        import logging
+        logging.getLogger(__name__).error(f"Failed to send password reset email: {e}")
+
+    # Log the attempt
+    audit = AuditLogger(db)
+    audit.log(
+        action="password_reset_requested",
+        resource_type="patient",
+        resource_id=patient.id,
+    )
+    db.commit()
+
+    return ForgotPasswordResponse(
+        success=True,
+        message="If an account exists with this email, you will receive a password reset link.",
+    )
+
+
+@router.post("/patient/reset-password", response_model=ResetPasswordResponse)
+async def patient_reset_password(
+    request: ResetPasswordRequest,
+    db: DbSession,
+):
+    """Reset password with token for a patient."""
+    from datetime import datetime
+    from passlib.hash import pbkdf2_sha256
+    from sqlalchemy import select
+
+    from sense_loop.models import Patient
+
+    if request.password != request.password_confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match",
+        )
+
+    # Find patient by reset token
+    stmt = select(Patient).where(Patient.password_reset_token == request.token)
+    patient = db.execute(stmt).scalar_one_or_none()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    if not patient.password_reset_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    if datetime.utcnow() > patient.password_reset_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new one.",
+        )
+
+    # Update password
+    patient.password_hash = pbkdf2_sha256.hash(request.password)
+    patient.password_reset_token = None
+    patient.password_reset_expires_at = None
+
+    # Log success
+    audit = AuditLogger(db)
+    audit.log(
+        action="password_reset",
+        resource_type="patient",
+        resource_id=patient.id,
+        outcome="success",
+    )
+    db.commit()
+
+    return ResetPasswordResponse(
+        success=True,
+        message="Password reset successfully. You can now sign in.",
+    )
+
+
 # ============================================================================
 # Practitioner Auth Endpoints
 # ============================================================================

@@ -49,6 +49,8 @@ class Patient(BaseDbModel):
 
     # Auth (for web/mobile login)
     password_hash: Mapped[str_255 | None] = mapped_column(nullable=True)
+    password_reset_token: Mapped[str_255 | None] = mapped_column(nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Enrollment
     activation_code: Mapped[str_50 | None] = mapped_column(nullable=True, index=True)
