@@ -274,8 +274,10 @@ async def patient_forgot_password(
     patient.password_reset_token = token
     patient.password_reset_expires_at = datetime.utcnow() + timedelta(hours=1)
 
-    # Build reset URL for the mobile app (deep link)
-    reset_url = f"senseloop://reset-password?token={token}"
+    # Build reset URL for the mobile app (Universal Link)
+    # Use https URL so email clients will make it tappable
+    from sense_loop.config import sl_settings
+    reset_url = f"{sl_settings.app_deep_link_base_url}/reset-password?token={token}"
 
     # Send password reset email
     try:

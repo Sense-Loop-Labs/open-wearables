@@ -12,7 +12,8 @@
           "/checkin/*",
           "/questionnaire/*",
           "/dashboard",
-          "/careplan"
+          "/careplan",
+          "/reset-password"
         ]
       }
     ]
