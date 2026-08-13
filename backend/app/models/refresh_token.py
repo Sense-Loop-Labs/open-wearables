@@ -28,3 +28,7 @@ class RefreshToken(BaseDbModel):
 
     last_used_at: Mapped[datetime | None]
     revoked_at: Mapped[datetime | None]
+
+    # When this token is revoked via rotation, store the ID of the replacement token.
+    # This allows clients to recover from network timeouts during token refresh.
+    replaced_by_id: Mapped[str_64 | None]

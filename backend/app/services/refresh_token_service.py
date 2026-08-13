@@ -83,6 +83,10 @@ class RefreshTokenService:
         Implements refresh token rotation: the old refresh token is revoked and
         a new one is issued with each refresh request.
 
+        Also supports a grace period: if a token was recently revoked (e.g., due to
+        network timeout during refresh), and the client retries with the old token,
+        we return the same replacement token instead of failing.
+
         Args:
             db_session: Database session
             refresh_token_str: The refresh token string
@@ -93,7 +97,9 @@ class RefreshTokenService:
         Raises:
             HTTPException: If the refresh token is invalid or revoked
         """
-        token = self.repo.get_valid_token(db_session, refresh_token_str)
+        # First try to get a valid token, or a recently-revoked token with replacement
+        token, replacement = self.repo.get_token_with_grace_period(db_session, refresh_token_str)
+
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -101,10 +107,34 @@ class RefreshTokenService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Revoke the old refresh token (rotation)
-        self.repo.revoke_token(db_session, token)
+        # If we have a replacement token (grace period recovery), return that
+        if replacement:
+            self.logger.info(
+                f"Grace period recovery: returning existing replacement token for user {token.user_id}"
+            )
+            # Generate new access token using the replacement token's info
+            if replacement.token_type == TokenType.SDK:
+                access_token = create_sdk_user_token(
+                    app_id=replacement.app_id,  # type: ignore[arg-type]
+                    user_id=str(replacement.user_id),
+                )
+            elif replacement.token_type == TokenType.DEVELOPER:
+                access_token = create_access_token(subject=str(replacement.developer_id))
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown token type: {replacement.token_type}",
+                )
 
-        # Generate new access token and refresh token based on token type
+            return TokenResponse(
+                access_token=access_token,
+                token_type="bearer",
+                refresh_token=replacement.id,  # Return the existing replacement token
+                expires_in=settings.access_token_expire_minutes * 60,
+            )
+
+        # Normal flow: create new tokens and revoke the old one
+        # First create the new refresh token so we can link it
         if token.token_type == TokenType.SDK:
             access_token = create_sdk_user_token(
                 app_id=token.app_id,  # type: ignore[arg-type]
@@ -131,6 +161,9 @@ class RefreshTokenService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown token type: {token.token_type}",
             )
+
+        # Revoke the old refresh token with link to replacement (for grace period recovery)
+        self.repo.revoke_token(db_session, token, replaced_by_id=new_refresh_token)
 
         return TokenResponse(
             access_token=access_token,
