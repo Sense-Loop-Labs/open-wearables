@@ -322,7 +322,7 @@ export default $config({
       SL_FIREBASE_CREDENTIALS_JSON: slFirebaseCredentials.value,
       SL_EMAIL_PROVIDER: "ses",
       SL_SES_REGION: "us-west-2",
-      SL_NOTIFICATION_FROM_EMAIL: "hello@senselooplabs.com",
+      SL_NOTIFICATION_FROM_EMAIL: "mike@senselooplabs.com",
       SL_SENDGRID_API_KEY: slSendgridApiKey.value, // Kept for fallback
       SL_PUSH_NOTIFICATIONS_ENABLED: "true",
       SL_ADMIN_PASSWORD: slAdminPassword.value,
@@ -354,6 +354,10 @@ export default $config({
         {
           actions: ["ssm:PutParameter", "ssm:AddTagsToResource"],
           resources: [`arn:aws:ssm:us-west-2:*:parameter/sense-loop/${stage}/open-wearables/*`],
+        },
+        {
+          actions: ["ses:SendEmail", "ses:SendRawEmail"],
+          resources: ["*"],
         },
       ],
       environment: {
