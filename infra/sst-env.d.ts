@@ -6,49 +6,6 @@
 
 declare module "sst" {
   export interface Resource {
-    "Api": {
-      "type": "sst.aws.Service"
-      "url": string
-    }
-    "FitbitClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "FitbitClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "Frontend": {
-      "type": "sst.aws.Service"
-      "url": string
-    }
-    "GarminClientId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "GarminClientSecret": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "SecretKey": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "SlAdminPassword": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "SlFirebaseCredentials": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "SlSendgridApiKey": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "WorkerBeat": {
-      "type": "sst.aws.Service"
-    }
   }
 }
 
