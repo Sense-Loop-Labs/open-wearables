@@ -8,108 +8,92 @@ This document describes the AWS infrastructure teardown performed to pause the O
 
 | Item | Value |
 |------|-------|
-| **Date** | August 31, 2026 |
+| **Date** | August 31 - September 3, 2026 |
 | **Stage** | staging |
 | **Region** | us-west-2 |
 | **Previous Monthly Cost** | ~$115-125/month |
-| **Current Monthly Cost** | ~$2/month (snapshot storage only) |
+| **Current Monthly Cost** | ~$0.52/month |
 
 ---
 
 ## Database Backup
 
-A full RDS snapshot was created before teardown.
+A local backup was created before deleting the RDS snapshot.
 
 | Field | Value |
 |-------|-------|
-| **Snapshot ID** | `open-wearables-staging-backup-20260831` |
+| **Local File** | `backups/open-wearables-staging-20260831.dump` |
+| **Format** | PostgreSQL custom format (pg_dump -F c) |
+| **Size** | 10 MB |
 | **Database** | PostgreSQL 16.13 |
-| **Size** | 20 GB |
-| **Status** | Available |
-| **Storage Cost** | ~$2/month |
+| **Created** | September 3, 2026 |
+
+**Note:** This file is excluded from git via `.gitignore` as it contains patient data.
 
 ### To Restore Database
 
 ```bash
-aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier open-wearables-staging \
-  --db-snapshot-identifier open-wearables-staging-backup-20260831 \
-  --db-instance-class db.t3.micro \
-  --vpc-security-group-ids <security-group-id> \
-  --db-subnet-group-name <subnet-group-name>
+# After redeploying infrastructure and getting new RDS endpoint:
+pg_restore \
+  -h <new-rds-host> \
+  -p 5432 \
+  -U postgres \
+  -d open_wearables \
+  backups/open-wearables-staging-20260831.dump
 ```
-
-**Note:** When redeploying with SST, a new database will be created. You may need to manually migrate data from the snapshot if you want to preserve existing patient/health data.
 
 ---
 
 ## Resources Removed
 
-### Compute
+### Phase 1: SST Teardown (August 31)
+
+Removed via `npx sst remove --stage staging`:
+
 - **ECS Cluster** - `open-wearables-staging`
 - **API Service** - FastAPI backend (Fargate)
 - **Worker Service** - Celery worker (Fargate)
 - **Beat Service** - Celery beat scheduler (Fargate)
 - **Frontend Service** - React dashboard (Fargate)
-
-### Database & Cache
-- **RDS PostgreSQL** - `open-wearables-staging` (snapshot preserved)
+- **RDS PostgreSQL** - `open-wearables-staging`
 - **ElastiCache Redis** - `open-wearables-staging`
-
-### Networking
-- **VPC** - `vpc-0cfb263873318a2d6`
 - **Load Balancers** (2) - API and Frontend ALBs
-- **Security Groups** - DB, Redis, Cluster, Bastion, Load Balancers
-- **Subnets** - Public and private subnets
-- **Route Tables** - Associated routing
-
-### Compute (Other)
 - **EC2 Bastion** - `i-09faf67e2d86be85f`
+- **Route53 DNS Records** - A/AAAA for staging domains
+- **ACM Certificates** - SSL for API and Frontend
+- **CloudWatch Log Groups** - API, Worker, Beat, Frontend
+- **IAM Roles** - Task and execution roles
+- **Security Groups** - DB, Redis, Cluster, Bastion, Load Balancers
 
-### DNS
-- **Route53 Records** - A and AAAA records for:
-  - `wearables.staging.senselooplabs.com`
-  - `dashboard.staging.senselooplabs.com`
+### Phase 2: Additional Cleanup (September 3)
 
-### SSL/TLS
-- **ACM Certificates** - For API and Frontend domains
+Discovered and removed additional resources:
 
-### Logging
-- **CloudWatch Log Groups** - API, Worker, Beat, Frontend logs
-
-### IAM
-- **Task Roles** - ECS task execution roles
-- **Execution Roles** - ECS service roles
-- **Bastion Role** - SSM access role
+- **CloudFormation Stack** - `SenseLoop-staging-SharedVpc`
+  - VPC `vpc-0cfb263873318a2d6` with 6 subnets
+  - NAT Instance (t4g.nano) - `i-074a7f82511335e4a`
+  - Route tables, internet gateway, etc.
+- **RDS Snapshot** - `open-wearables-staging-backup-20260831` (after local backup)
+- **ECR Repository** - `sst-asset` (20.4 GB of container images)
+- **CloudWatch Log Group** - `/sense-loop/staging/vpc-flow-logs`
 
 ---
 
 ## Resources Preserved
 
-### Database Snapshot
-- **ID:** `open-wearables-staging-backup-20260831`
-- **Cost:** ~$2/month (20GB × $0.10/GB)
+### Local Database Backup
+- **File:** `backups/open-wearables-staging-20260831.dump`
 - **Contains:** All patient data, health records, care plans, questionnaires
+- **Storage:** Local filesystem (excluded from git)
 
-### SST Secrets (AWS SSM Parameter Store)
-These secrets remain in SSM and will be reused on redeployment:
-- `SecretKey` - Application secret key
-- `DbPassword` - Database password
-- `GarminClientId` / `GarminClientSecret`
-- `FitbitClientId` / `FitbitClientSecret`
-- `SlSendgridApiKey` - SendGrid API key
-- `SlFirebaseCredentials` - Firebase push notification credentials
-- `SlAdminPassword` - Admin password
-
-**Cost:** Free (SSM Parameter Store standard parameters)
-
-### Route53 Hosted Zone
-- Domain configuration for `senselooplabs.com` remains active
-- **Cost:** $0.50/month per hosted zone
-
-### ECR Container Images
-- Docker images may remain in ECR
-- **Cost:** ~$0.10/GB/month
+### AWS Resources (Minimal Cost)
+| Resource | Purpose | Monthly Cost |
+|----------|---------|--------------|
+| Route53 Hosted Zone | DNS for senselooplabs.com | ~$0.50 |
+| CDKToolkit Stack | AWS CDK bootstrap | $0 |
+| CDK ECR Repository | CDK assets (minimal) | ~$0.01 |
+| S3 Buckets | SST/CDK state (few MB) | ~$0.01 |
+| **Total** | | **~$0.52/month** |
 
 ---
 
@@ -133,23 +117,28 @@ This will recreate:
 - DNS records
 - SSL certificates
 
-### 2. Restore Database (Optional)
+### 2. Restore Database
 
-If you need to restore the previous data:
+After deployment completes, restore from local backup:
 
-**Option A: Manual Migration**
-1. Create a temporary RDS instance from snapshot
-2. Use `pg_dump` to export data
-3. Import into the new SST-created database
-4. Delete temporary instance
+```bash
+# Get the new RDS endpoint from SST outputs
+cat infra/.sst/outputs.json | jq -r '.dbHost'
 
-**Option B: Use Snapshot Directly**
-1. After SST deploy, note the new DB security group and subnet group
-2. Delete the SST-created empty database
-3. Restore from snapshot with same identifier
-4. Update SST configuration if needed
+# Restore the database
+PGPASSWORD='<db-password>' pg_restore \
+  -h <db-host-from-outputs> \
+  -p 5432 \
+  -U postgres \
+  -d open_wearables \
+  --no-owner \
+  --no-privileges \
+  backups/open-wearables-staging-20260831.dump
+```
 
-### 3. Run Migrations
+**Note:** Get the database password from SST secrets or the Pulumi state after deployment.
+
+### 3. Run Migrations (if needed)
 
 ```bash
 cd /Users/mikeaymard/Projects/sense-loop-labs/open-wearables/backend
@@ -172,47 +161,60 @@ alembic upgrade head
 | ECS Fargate | $30-40 | $0 |
 | Load Balancers | $20 | $0 |
 | EC2 Bastion | $5 | $0 |
+| NAT Instance | $3 | $0 |
+| ECR Storage | $2 | $0 |
+| RDS Snapshot | $2 | $0 |
 | Data Transfer | $5-10 | $0 |
-| **RDS Snapshot** | - | **$2** |
 | Route53 Zone | $0.50 | $0.50 |
-| **Total** | **~$120-155** | **~$2.50** |
+| S3/CDK Assets | $0.02 | $0.02 |
+| **Total** | **~$128-143** | **~$0.52** |
 
-**Monthly Savings:** ~$117-152
-
----
-
-## Cleanup Tasks (Optional)
-
-To further reduce costs to zero:
-
-### Delete Database Snapshot
-```bash
-aws rds delete-db-snapshot \
-  --db-snapshot-identifier open-wearables-staging-backup-20260831
-```
-**Warning:** This permanently deletes all backed-up data.
-
-### Delete ECR Images
-```bash
-aws ecr batch-delete-image \
-  --repository-name open-wearables-staging \
-  --image-ids imageTag=latest
-```
-
-### Delete SST Secrets
-```bash
-npx sst secrets remove SecretKey --stage staging
-# Repeat for other secrets...
-```
+**Monthly Savings:** ~$127-142
 
 ---
 
-## Contact
+## Cleanup Commands Reference
 
-For questions about redeployment or data restoration, refer to:
-- [CODE_STRUCTURE.md](../platform_code_structure.md) - Codebase overview
-- [SST Documentation](https://sst.dev/docs/) - Infrastructure framework
+Commands used during teardown (for reference):
+
+```bash
+# SST teardown
+cd infra && npx sst remove --stage staging
+
+# Delete CloudFormation stack
+aws cloudformation delete-stack --stack-name SenseLoop-staging-SharedVpc
+
+# Delete ECR repository
+aws ecr delete-repository --repository-name sst-asset --force
+
+# Delete RDS snapshot (after backing up)
+aws rds delete-db-snapshot --db-snapshot-identifier open-wearables-staging-backup-20260831
+
+# Delete CloudWatch log group
+aws logs delete-log-group --log-group-name /sense-loop/staging/vpc-flow-logs
+```
+
+---
+
+## Further Cleanup (Optional)
+
+To reduce costs to absolute zero:
+
+### Delete Route53 Hosted Zone
+```bash
+# Warning: This will break DNS for senselooplabs.com
+aws route53 delete-hosted-zone --id Z02200073IYX57IAJ0S2T
+```
+
+### Delete CDK Bootstrap
+```bash
+aws cloudformation delete-stack --stack-name CDKToolkit
+aws ecr delete-repository --repository-name cdk-hnb659fds-container-assets-663566124074-us-west-2 --force
+aws s3 rb s3://cdk-hnb659fds-assets-663566124074-us-west-2 --force
+aws s3 rb s3://cdk-hnb659fds-assets-663566124074-us-east-1 --force
+```
 
 ---
 
 *Document created: August 31, 2026*
+*Last updated: September 3, 2026*
